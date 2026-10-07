@@ -1,0 +1,12 @@
+{
+  "summary": {
+    "total_calls": 0,
+    "total_prompt_tokens": 0,
+    "total_completion_tokens": 0,
+    "total_tokens": 0,
+    "total_cost_usd": 0.0,
+    "total_wall_time_s": 0.0,
+    "mean_wall_time_s": 0.0
+  },
+  "calls": []
+}

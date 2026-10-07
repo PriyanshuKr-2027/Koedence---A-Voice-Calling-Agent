@@ -1,6 +1,8 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.services.voice_pipeline import get_active_pipeline_path
 
 # Import API Routers
 from app.routers import (
@@ -17,11 +19,22 @@ from app.routers import (
     intent,
 )
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    if settings.ENVIRONMENT.lower() == "production" and settings.ALLOW_DEV_AUTH:
+        raise RuntimeError("ALLOW_DEV_AUTH cannot be enabled when ENVIRONMENT=production")
+    active_path = get_active_pipeline_path()
+    logger.info("VoCall Voice Pipeline Startup: Active pipeline path is [%s]", active_path)
+
 
 # CORS middleware for Next.js & Vite frontend
 app.add_middleware(

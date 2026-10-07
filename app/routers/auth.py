@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 import httpx
 from app.core.config import settings
@@ -20,29 +20,35 @@ class AuthTokenResponse(BaseModel):
     user: Optional[Dict[str, Any]] = None
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+async def require_authenticated_user(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+) -> Dict[str, Any]:
     """
-    Dependency that decodes and validates JWT header, returning user profile & org_id.
-    Compatible with Clerk, Supabase Auth, and Firebase Auth JWT formats.
-    Raises HTTP 401 on invalid token.
-    In development mode, falls back to local dev user if no header is provided.
+    Validates JWT token against SUPABASE_JWT_SECRET (or Supabase Auth service),
+    verifies signature, exp, and aud, and derives org_id from profiles or token claims.
+    Rejects forged, unsigned, expired, or org-less tokens.
     """
-    is_prod = settings.ENVIRONMENT.lower() == "production"
-
     if not authorization:
-        if is_prod:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication token required",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        # Development mode fallback
-        return {
-            "id": "00000000-0000-0000-0000-000000000001",
-            "email": "dev@vocall.ai",
-            "org_id": "00000000-0000-0000-0000-000000000000",
-            "role": "admin",
-        }
+        if settings.ALLOW_DEV_AUTH:
+            if settings.ENVIRONMENT.lower() == "production":
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication token required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            dev_org = request.query_params.get("org_id") or "00000000-0000-0000-0000-000000000001"
+            return {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "email": "dev@vocall.ai",
+                "org_id": dev_org,
+                "role": "admin",
+            }
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     token = authorization.replace("Bearer ", "").strip()
     if not token:
@@ -52,33 +58,124 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    try:
-        import jwt
+    import jwt
 
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        user_id = decoded.get("sub") or decoded.get("id")
-        if not user_id:
-            raise ValueError("Token missing user subject")
+    decoded: Dict[str, Any] = {}
 
-        org_id = (
-            decoded.get("org_id")
-            or decoded.get("app_metadata", {}).get("org_id")
-            or decoded.get("user_metadata", {}).get("org_id")
-            or "00000000-0000-0000-0000-000000000000"
-        )
+    if settings.SUPABASE_JWT_SECRET:
+        try:
+            decoded = jwt.decode(
+                token,
+                key=settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_signature": True, "verify_exp": True, "verify_aud": False},
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except jwt.InvalidSignatureError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token signature",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except jwt.DecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token format or signature",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except jwt.PyJWTError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid authorization token: {exc}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-        return {
-            "id": user_id,
-            "email": decoded.get("email", "user@vocall.ai"),
-            "org_id": org_id,
-            "role": decoded.get("role", "member"),
-        }
-    except Exception as exc:
+        aud = decoded.get("aud")
+        if aud and aud != "authenticated":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token audience",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    else:
+        from app.services.supabase_client import supabase
+        if supabase:
+            try:
+                user_resp = supabase.auth.get_user(token)
+                if not user_resp or not getattr(user_resp, "user", None):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid authorization token",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                u = user_resp.user
+                decoded = {
+                    "sub": getattr(u, "id", None),
+                    "email": getattr(u, "email", "user@vocall.ai"),
+                    "app_metadata": getattr(u, "app_metadata", {}),
+                    "user_metadata": getattr(u, "user_metadata", {}),
+                    "aud": getattr(u, "aud", "authenticated"),
+                    "role": getattr(u, "role", "authenticated"),
+                }
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"Token verification failed: {exc}",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authorization token: SUPABASE_JWT_SECRET not configured",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    user_id = decoded.get("sub") or decoded.get("id")
+    if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authorization token: {exc}",
+            detail="Token missing user subject",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Derive org_id ONLY from verified token claim or profiles table
+    org_id = (
+        decoded.get("org_id")
+        or decoded.get("app_metadata", {}).get("org_id")
+        or decoded.get("user_metadata", {}).get("org_id")
+    )
+    if not org_id:
+        from app.services.supabase_client import supabase
+        if supabase:
+            try:
+                p_res = supabase.table("profiles").select("org_id").eq("id", str(user_id)).single().execute()
+                if p_res.data and p_res.data.get("org_id"):
+                    org_id = p_res.data["org_id"]
+            except Exception:
+                pass
+
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not belong to any organization",
+        )
+
+    return {
+        "id": str(user_id),
+        "email": decoded.get("email", "user@vocall.ai"),
+        "org_id": str(org_id),
+        "role": decoded.get("role", "member"),
+    }
+
+
+get_current_user = require_authenticated_user
 
 
 @router.post("/login")

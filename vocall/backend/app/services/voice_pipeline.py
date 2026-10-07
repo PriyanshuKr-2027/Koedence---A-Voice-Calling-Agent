@@ -20,6 +20,14 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from app.services.audio import (
+    mulaw_to_pcm16,
+    resample_pcm16,
+    pcm16_to_wav,
+    VoiceActivityDetector,
+)
+from app.services.latency_stage import stage
+
 from app.core.config import settings
 from app.services.emotion import (
     analyze_audio_emotion,
@@ -29,15 +37,36 @@ from app.services.emotion import (
     fuse_emotion_signals,
     get_tone_instruction,
 )
+from app.services.turn_pipeline import (
+    assemble_turn_prompt,
+    execute_shared_turn_steps,
+    format_t2_facts,
+    get_active_tools,
+    handle_tool_call,
+    select_tts_config,
+)
+from app.services.intent import detector, slot_manager
 from app.services.livekit_service import livekit_service
 from app.services.llm import llm_service
 from app.services.memory import short_term
+from app.services.memory.retriever import build_memory_prompt, retrieve_all_memory
 from app.services.redis_client import redis_client
 from app.services.stt import transcribe_audio
 from app.services.supabase_client import supabase
 from app.services.tts import synthesize_speech
 
 logger = logging.getLogger(__name__)
+
+
+def get_active_pipeline_path() -> str:
+    """
+    Returns the active voice pipeline path: 'custom' (default) or 'pipecat'.
+    With PIPELINE_MODE='custom', Pipecat is never imported or used.
+    """
+    mode = getattr(settings, "PIPELINE_MODE", "custom").lower()
+    if mode == "pipecat":
+        return "pipecat"
+    return "custom"
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +304,8 @@ async def start_pipeline(
     """
     Builds and runs the VoCall real-time voice pipeline for a single call.
     """
-    logger.info("Starting voice pipeline: call_id=%s agent_id=%s", call_id, agent_id)
+    active_path = get_active_pipeline_path()
+    logger.info("Starting voice pipeline: call_id=%s agent_id=%s path=%s", call_id, agent_id, active_path)
 
     agent = await _load_agent_config(agent_id)
     org_id: str = agent.get("org_id", "")
@@ -295,102 +325,124 @@ async def start_pipeline(
     api_keys = await _load_org_api_keys(org_id)
     await short_term.init_call_memory(call_id)
 
+    call_start_block = ""
+    try:
+        mem_dict = await retrieve_all_memory(
+            contact_id=contact_id,
+            org_id=org_id,
+            agent_id=agent_id,
+            query_text="",
+            config={"call_id": call_id, "episodic_limit": 3},
+            enabled_tiers=["t3", "t4"],
+        )
+        call_start_block = build_memory_prompt(mem_dict)
+    except Exception as exc:
+        logger.warning("Failed call-start memory retrieval: %s", exc)
+        call_start_block = ""
+
+    pipecat_prompt = f"{call_start_block}\n\n{final_prompt}" if call_start_block else final_prompt
+
     if livekit_service.is_configured():
         try:
             await livekit_service.create_room(call_id)
         except Exception as exc:
             logger.warning("LiveKit room pre-creation skipped: %s", exc)
 
-    # ---- Update call status to 'in_progress' & inject memory ----
-    try:
-        from app.services.memory import retriever
-        mem_dict = await retriever.retrieve_all_memory(
-            contact_id=contact_id,
-            org_id=org_id,
-            agent_id=agent_id,
-            config={"call_id": call_id},
-        )
-        memory_block = retriever.build_memory_prompt(mem_dict)
-        if memory_block:
-            final_prompt = f"{final_prompt}\n\n{memory_block}"
+    if supabase:
+        try:
+            supabase.table("calls").update({
+                "status": "in_progress",
+                "analysis": {"pipeline_path": active_path},
+            }).eq("id", call_id).execute()
+        except Exception as exc:
+            logger.warning("Failed to update call status to in_progress: %s", exc)
 
-        if supabase:
+    try:
+        if active_path == "pipecat":
+            logger.info("Starting Pipecat path (experimental: no emotion, intent, or memory steps)")
             try:
-                c_res = supabase.table("calls").select("analysis").eq("id", call_id).single().execute()
-                c_analysis = (c_res.data or {}).get("analysis") or {}
-                if isinstance(c_analysis, dict):
-                    c_analysis["memory_recalled"] = mem_dict
-                else:
-                    c_analysis = {"memory_recalled": mem_dict}
-                supabase.table("calls").update({
-                    "status": "in_progress",
-                    "analysis": c_analysis
-                }).eq("id", call_id).execute()
-            except Exception as exc:
-                logger.warning("Failed to update call status or memory_recalled: %s", exc)
+                from pipecat.pipeline.pipeline import Pipeline
+                from pipecat.pipeline.runner import PipelineRunner
+                from pipecat.pipeline.task import PipelineTask
+                from pipecat.processors.aggregators.llm_response import (
+                    LLMUserResponseAggregator,
+                    LLMAssistantResponseAggregator,
+                )
+                from pipecat.transports.network.websocket_server import (
+                    WebsocketServerParams,
+                    WebsocketServerTransport,
+                )
+                from pipecat.services.openai import OpenAILLMService
+
+                transport = WebsocketServerTransport(
+                    params=WebsocketServerParams(
+                        audio_out_enabled=True,
+                        add_wav_header=False,
+                        vad_enabled=True,
+                        vad_audio_passthrough=True,
+                    )
+                )
+
+                groq_key = api_keys.get("groq") or settings.GROQ_API_KEY
+                llm = OpenAILLMService(
+                    api_key=groq_key or "placeholder",
+                    base_url="https://api.groq.com/openai/v1",
+                    model="llama-3.3-70b-versatile",
+                )
+
+                user_aggregator = LLMUserResponseAggregator(
+                    messages=[{"role": "system", "content": pipecat_prompt}]
+                )
+                assistant_aggregator = LLMAssistantResponseAggregator(
+                    messages=[{"role": "system", "content": pipecat_prompt}]
+                )
+
+                pipeline = Pipeline(
+                    [
+                        transport.input(),
+                        user_aggregator,
+                        llm,
+                        assistant_aggregator,
+                        transport.output(),
+                    ]
+                )
+
+                task = PipelineTask(pipeline)
+                runner = PipelineRunner()
+                await runner.run(task)
+            except Exception as pipecat_exc:
+                logger.warning(
+                    "Pipecat run raised error (%s) — falling back to custom turn loop to continue call",
+                    pipecat_exc,
+                )
+                await _custom_turn_loop(
+                    ws_connection=ws_connection,
+                    call_id=call_id,
+                    agent_id=agent_id,
+                    org_id=org_id,
+                    system_prompt=final_prompt,
+                    api_keys=api_keys,
+                    language=language,
+                    voice_config=voice_config,
+                    agent=agent,
+                    contact_id=contact_id,
+                    call_start_block=call_start_block,
+                )
         else:
-            logger.info("Supabase client not initialized — skipping call status update")
-    except Exception as exc:
-        logger.warning("Memory retrieval at pipeline start failed: %s", exc)
-
-    try:
-        from pipecat.pipeline.pipeline import Pipeline
-        from pipecat.pipeline.runner import PipelineRunner
-        from pipecat.pipeline.task import PipelineTask
-        from pipecat.processors.aggregators.llm_response import (
-            LLMUserResponseAggregator,
-            LLMAssistantResponseAggregator,
-        )
-        from pipecat.transports.network.websocket_server import (
-            WebsocketServerParams,
-            WebsocketServerTransport,
-        )
-        from pipecat.services.openai import OpenAILLMService
-
-        transport = WebsocketServerTransport(
-            params=WebsocketServerParams(
-                audio_out_enabled=True,
-                add_wav_header=False,
-                vad_enabled=True,
-                vad_audio_passthrough=True,
+            logger.info("Running custom turn loop (production multi-modal loop with emotion, intent, memory)")
+            await _custom_turn_loop(
+                ws_connection=ws_connection,
+                call_id=call_id,
+                agent_id=agent_id,
+                org_id=org_id,
+                system_prompt=final_prompt,
+                api_keys=api_keys,
+                language=language,
+                voice_config=voice_config,
+                agent=agent,
+                contact_id=contact_id,
+                call_start_block=call_start_block,
             )
-        )
-
-        groq_key = api_keys.get("groq") or settings.GROQ_API_KEY
-        llm = OpenAILLMService(
-            api_key=groq_key or "placeholder",
-            base_url="https://api.groq.com/openai/v1",
-            model="llama-3.3-70b-versatile",
-        )
-
-        user_aggregator = LLMUserResponseAggregator(
-            messages=[{"role": "system", "content": final_prompt}]
-        )
-        assistant_aggregator = LLMAssistantResponseAggregator(
-            messages=[{"role": "system", "content": final_prompt}]
-        )
-
-        pipeline = Pipeline(
-            [
-                transport.input(),
-                user_aggregator,
-                llm,
-                assistant_aggregator,
-                transport.output(),
-            ]
-        )
-
-        task = PipelineTask(pipeline)
-        runner = PipelineRunner()
-        await runner.run(task)
-
-    except ImportError as exc:
-        logger.warning(
-            "Pipecat not available (%s) — running minimal echo loop with tools support", exc
-        )
-        await _minimal_echo_loop(
-            ws_connection, call_id, agent_id, org_id, final_prompt, api_keys, language, voice_config, agent
-        )
 
     except Exception as exc:
         logger.error("Pipeline error for call %s: %s", call_id, exc)
@@ -400,10 +452,13 @@ async def start_pipeline(
 
 
 # ---------------------------------------------------------------------------
-# Minimal fallback loop (with tool execution support)
+# Custom turn loop (production multi-modal loop)
 # ---------------------------------------------------------------------------
 
-async def _minimal_echo_loop(
+_format_t2_facts = format_t2_facts
+
+
+async def _custom_turn_loop(
     ws_connection,
     call_id: str,
     agent_id: str,
@@ -413,12 +468,25 @@ async def _minimal_echo_loop(
     language: str,
     voice_config: Dict[str, Any],
     agent: Optional[Dict[str, Any]] = None,
+    contact_id: Optional[str] = None,
+    call_start_block: str = "",
 ) -> None:
     """
-    Minimal WebSocket receive loop with active tools & tool_call handling.
+    Custom WebSocket turn loop with multi-modal parallel fan-out
+    (emotion, intent, memory), tone adaptation, and active tool execution.
     """
-    logger.info("Running minimal fallback loop for call %s (org_id=%s, agent_id=%s)", call_id, org_id, agent_id)
-    conversation: list = [{"role": "system", "content": system_prompt}]
+    logger.info("Running custom turn loop for call %s (org_id=%s, agent_id=%s)", call_id, org_id, agent_id)
+    initial_prompt = f"{call_start_block}\n\n{system_prompt}" if call_start_block else system_prompt
+    conversation: list = [{"role": "system", "content": initial_prompt}]
+    turn_idx = 0
+    emotion_config: Dict[str, Any] = (agent or {}).get("emotion_config") or {}
+    hume_key = api_keys.get("hume") or api_keys.get("hume_api_key")
+    vad = VoiceActivityDetector(
+        sample_rate=8000,
+        frame_duration_ms=20,
+        energy_threshold=getattr(settings, "VAD_ENERGY_THRESHOLD", 400.0),
+        silence_duration_ms=getattr(settings, "VAD_SILENCE_MS", 700),
+    )
 
     try:
         while True:
@@ -445,152 +513,160 @@ async def _minimal_echo_loop(
                         continue
 
                     import base64
-                    audio_bytes = base64.b64decode(audio_b64)
-
-                    # 1. STT Transcription
-                    transcript = await _stt_transcribe(audio_bytes, language, api_keys)
-                    if not transcript:
+                    mulaw_bytes = base64.b64decode(audio_b64)
+                    pcm8k = mulaw_to_pcm16(mulaw_bytes)
+                    utterance_pcm = vad.process_frame(pcm8k)
+                    if not utterance_pcm:
                         continue
 
-                    # 2. Emotion Analysis
-                    groq_key = api_keys.get("groq") or api_keys.get("groq_api_key") or settings.GROQ_API_KEY
-                    hume_key = api_keys.get("hume") or api_keys.get("hume_api_key")
+                    turn_idx += 1
 
-                    text_emotion, audio_emotion = await asyncio.gather(
-                        analyze_text_emotion(transcript, groq_key),
-                        analyze_audio_emotion(audio_bytes, hume_key),
-                        return_exceptions=True,
-                    )
-                    if isinstance(text_emotion, Exception):
-                        text_emotion = None
-                    if isinstance(audio_emotion, Exception):
-                        audio_emotion = None
+                    with stage("turn_total", call_id, turn_idx):
+                        # Resample 8 kHz to 16 kHz and encapsulate in valid WAV container
+                        pcm16k = resample_pcm16(utterance_pcm, 8000, 16000)
+                        wav_bytes = pcm16_to_wav(pcm16k, sample_rate=16000, num_channels=1)
 
-                    ts = int(time.time() * 1000)
+                        # 1. STT Transcription Stage
+                        with stage("stt", call_id, turn_idx):
+                            transcript = await _stt_transcribe(wav_bytes, language, api_keys)
+                        if not transcript:
+                            continue
 
-                    # Persist emotion events
-                    if text_emotion:
-                        text_emotion["signal_source"] = "text"
-                        text_emotion["timestamp_ms"] = ts
-                        await short_term.append_emotion_event(call_id, text_emotion)
-
-                    if audio_emotion:
-                        audio_emotion["signal_source"] = "audio"
-                        audio_emotion["timestamp_ms"] = ts
-                        await short_term.append_emotion_event(call_id, audio_emotion)
-
-                    fused_emotion = fuse_emotion_signals(text_emotion, audio_emotion)
-
-                    await _append_turn_to_redis(call_id, "user", transcript, ts, emotion_state=fused_emotion)
-                    conversation.append({"role": "user", "content": transcript})
-
-                    # Emotion Config & Tone Adaptation
-                    agent_dict = agent or {}
-                    emotion_config = (agent_dict.get("config") or {}).get("emotion") or {}
-                    instruction = get_tone_instruction(fused_emotion, emotion_config)
-                    turn_prompt = f"{instruction}\n\n{system_prompt}" if instruction else system_prompt
-
-                    # Frustration Threshold Connectors Trigger (Slack & Webhook)
-                    asyncio.create_task(
-                        fire_threshold_connectors(
+                        # 2. Shared Multi-Modal Turn Steps (Emotion, Intent, Memory, Tone, Prompt, TTS)
+                        shared = await execute_shared_turn_steps(
+                            call_id=call_id,
+                            turn_idx=turn_idx,
+                            transcript=transcript,
+                            wav_bytes=wav_bytes,
+                            agent=agent or {},
                             org_id=org_id,
                             agent_id=agent_id,
-                            call_id=call_id,
-                            emotion_state=fused_emotion,
-                            contact={"name": "Caller", "phone": "Unknown"},
-                            agent=agent_dict,
-                            last_transcript_line=transcript,
-                        )
-                    )
-
-                    # 3. LLM Call turn with active tools
-                    active_tools = await get_active_tools(org_id, agent_id)
-                    llm_kwargs = {}
-                    if active_tools:
-                        llm_kwargs["tools"] = active_tools
-
-                    try:
-                        llm_res = await llm_service.generate(
-                            prompt=turn_prompt,
-                            messages=conversation[1:],
+                            contact_id=contact_id,
                             api_keys=api_keys,
-                            **llm_kwargs,
+                            system_prompt=system_prompt,
+                            call_start_block=call_start_block,
+                            contact_name="Caller",
+                            language=language,
                         )
-                    except Exception as llm_exc:
-                        logger.error("LLM error: %s", llm_exc)
-                        llm_res = "I'm sorry, I'm having trouble responding right now."
+                        fused_emotion = shared["fused_emotion"]
+                        text_emotion = shared["text_emotion"]
+                        audio_emotion = shared["audio_emotion"]
+                        active_tools = shared["active_tools"]
+                        turn_prompt = shared["turn_prompt"]
+                        tts_config = shared["tts_config"]
 
-                    reply = ""
-                    tool_calls = None
-                    if isinstance(llm_res, dict):
-                        reply = llm_res.get("content") or ""
-                        tool_calls = llm_res.get("tool_calls")
-                    else:
-                        reply = str(llm_res or "")
+                        conversation.append({"role": "user", "content": transcript})
+                        ts = int(time.time() * 1000)
 
-                    # 4. Handle Tool Calls if generated by LLM
-                    if tool_calls:
-                        for tc in tool_calls:
-                            func = tc.get("function", {})
-                            t_name = func.get("name", "")
-                            t_args_raw = func.get("arguments", {})
-                            if isinstance(t_args_raw, str):
-                                try:
-                                    t_args = json.loads(t_args_raw)
-                                except Exception:
-                                    t_args = {}
-                            else:
-                                t_args = t_args_raw or {}
+                        # 3. LLM Generation Stage
+                        llm_kwargs = {}
+                        if active_tools:
+                            llm_kwargs["tools"] = active_tools
+                            llm_kwargs["tools"] = active_tools
 
-                            conversation.append({
-                                "role": "assistant",
-                                "content": reply,
-                                "tool_calls": [tc],
-                            })
-
-                            # Execute tool call
-                            tool_result_str = await handle_tool_call(t_name, t_args, org_id, agent_id)
-
-                            conversation.append({
-                                "role": "tool",
-                                "tool_call_id": tc.get("id", "call_1"),
-                                "name": t_name,
-                                "content": tool_result_str,
-                            })
-
-                            # Make one more LLM call to get final spoken response
+                        with stage("llm", call_id, turn_idx):
                             try:
-                                final_llm_res = await llm_service.generate(
+                                llm_res = await llm_service.generate(
                                     prompt=turn_prompt,
                                     messages=conversation[1:],
                                     api_keys=api_keys,
+                                    **llm_kwargs,
                                 )
-                                if isinstance(final_llm_res, dict):
-                                    reply = final_llm_res.get("content") or ""
+                            except Exception as llm_exc:
+                                logger.error("LLM error: %s", llm_exc)
+                                llm_res = "I'm sorry, I'm having trouble responding right now."
+
+                        reply = ""
+                        tool_calls = None
+                        if isinstance(llm_res, dict):
+                            reply = llm_res.get("content") or ""
+                            tool_calls = llm_res.get("tool_calls")
+                        else:
+                            reply = str(llm_res or "")
+
+                        # Handle Tool Calls if generated by LLM
+                        if tool_calls:
+                            for tc in tool_calls:
+                                func = tc.get("function", {})
+                                t_name = func.get("name", "")
+                                t_args_raw = func.get("arguments", {})
+                                if isinstance(t_args_raw, str):
+                                    try:
+                                        t_args = json.loads(t_args_raw)
+                                    except Exception:
+                                        t_args = {}
                                 else:
-                                    reply = str(final_llm_res or "")
-                            except Exception as exc2:
-                                logger.error("Error in post-tool LLM response: %s", exc2)
-                                reply = reply or "I completed the action."
+                                    t_args = t_args_raw or {}
 
-                    conversation.append({"role": "assistant", "content": reply})
-                    ts2 = int(time.time() * 1000)
-                    await _append_turn_to_redis(call_id, "assistant", reply, ts2)
+                                conversation.append({
+                                    "role": "assistant",
+                                    "content": reply,
+                                    "tool_calls": [tc],
+                                })
 
-                    # 5. TTS Speech Synthesis
-                    tts_emotion_state = fused_emotion if emotion_config.get("emotion_conditioned_voice") and hume_key else None
-                    audio_out = await _tts_synthesize(reply, voice_config, api_keys, emotion_state=tts_emotion_state)
+                                # Execute tool call
+                                tool_result_str = await handle_tool_call(t_name, t_args, org_id, agent_id)
 
-                    if audio_out:
-                        audio_b64_out = base64.b64encode(audio_out).decode()
-                        response_payload = json.dumps(
-                            {
-                                "event": "media",
-                                "streamSid": payload.get("streamSid", ""),
-                                "media": {"payload": audio_b64_out},
-                            }
-                        )
-                        await ws_connection.send({"type": "websocket.send", "text": response_payload})
+                                conversation.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc.get("id", "call_1"),
+                                    "name": t_name,
+                                    "content": tool_result_str,
+                                })
+
+                                # Make one more LLM call to get final spoken response
+                                try:
+                                    final_llm_res = await llm_service.generate(
+                                        prompt=turn_prompt,
+                                        messages=conversation[1:],
+                                        api_keys=api_keys,
+                                    )
+                                    if isinstance(final_llm_res, dict):
+                                        reply = final_llm_res.get("content") or ""
+                                    else:
+                                        reply = str(final_llm_res or "")
+                                except Exception as exc2:
+                                    logger.error("Error in post-tool LLM response: %s", exc2)
+                                    reply = reply or "I completed the action."
+
+                        conversation.append({"role": "assistant", "content": reply})
+                        ts2 = int(time.time() * 1000)
+
+                        # 5. Turn Append Stage (Redis)
+                        with stage("append_turn", call_id, turn_idx):
+                            if text_emotion:
+                                text_emotion["signal_source"] = "text"
+                                text_emotion["timestamp_ms"] = ts
+                                await short_term.append_emotion_event(call_id, text_emotion)
+
+                            if audio_emotion:
+                                audio_emotion["signal_source"] = "audio"
+                                audio_emotion["timestamp_ms"] = ts
+                                await short_term.append_emotion_event(call_id, audio_emotion)
+
+                            await _append_turn_to_redis(call_id, "user", transcript, ts, emotion_state=fused_emotion)
+                            await _append_turn_to_redis(call_id, "assistant", reply, ts2)
+
+                        # 6. TTS Speech Synthesis Stage
+                        tts_emotion_state = fused_emotion if emotion_config.get("emotion_conditioned_voice") and hume_key else None
+                        with stage("tts", call_id, turn_idx):
+                            audio_out = await _tts_synthesize(reply, tts_config or voice_config, api_keys, emotion_state=tts_emotion_state)
+
+                        # 7. Network Out Stage
+                        with stage("network_out", call_id, turn_idx):
+                            if audio_out:
+                                audio_b64_out = base64.b64encode(audio_out).decode()
+                                response_payload = json.dumps(
+                                    {
+                                        "event": "media",
+                                        "streamSid": payload.get("streamSid", ""),
+                                        "media": {"payload": audio_b64_out},
+                                    }
+                                )
+                                if hasattr(ws_connection, "send"):
+                                    await ws_connection.send({"type": "websocket.send", "text": response_payload})
+                                elif hasattr(ws_connection, "send_text"):
+                                    await ws_connection.send_text(response_payload)
 
                 elif payload.get("event") == "stop":
                     logger.info("Twilio stream stopped for call %s", call_id)
@@ -598,6 +674,10 @@ async def _minimal_echo_loop(
 
     except Exception as exc:
         logger.error("Fallback loop error for call %s: %s", call_id, exc)
+
+
+# Backward compatibility alias
+_minimal_echo_loop = _custom_turn_loop
 
 
 # ---------------------------------------------------------------------------

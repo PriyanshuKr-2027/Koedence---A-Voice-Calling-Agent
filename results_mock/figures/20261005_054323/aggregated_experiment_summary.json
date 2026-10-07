@@ -1,0 +1,95 @@
+{
+  "memory": {
+    "parameters": {
+      "k": 5,
+      "tau": 0.75,
+      "episodic_limit": 3,
+      "seed": 0
+    },
+    "total_probes": 20,
+    "mean_recall_filtered": 0.925,
+    "ci_recall_filtered": [
+      0.8417,
+      1.0
+    ],
+    "mean_recall_baseline": 1.0,
+    "ci_recall_baseline": [
+      1.0,
+      1.0
+    ],
+    "mean_diff": -0.075,
+    "paired_p_value": 0.076
+  },
+  "emotion": {
+    "parameters": {
+      "fusion_w": 0.6,
+      "tone_threshold": 0.6,
+      "alert_threshold": 0.7,
+      "seed": 0
+    },
+    "samples_evaluated": 30,
+    "cohen_kappa_fused": 0.0,
+    "cohen_kappa_text_only": -0.0563,
+    "mcnemar_statistic": 0.0,
+    "mcnemar_p_value": 1.0,
+    "mean_fused_valence": -0.1237,
+    "ci_fused_valence": [
+      -0.2058,
+      -0.042
+    ]
+  },
+  "wer": {
+    "models": {
+      "hinglish_primary": "sarvam/saarika:v2",
+      "baseline": "groq/whisper-large-v3",
+      "seed": 0
+    },
+    "total_test_phrases": 5,
+    "mean_wer_sarvam": 0.0,
+    "ci_wer_sarvam": [
+      0.0,
+      0.0
+    ],
+    "mean_wer_whisper": 0.2278,
+    "ci_wer_whisper": [
+      0.0889,
+      0.3611
+    ],
+    "wer_improvement_sarvam": 0.2278,
+    "paired_p_value": 0.0
+  },
+  "latency": {
+    "trials": 50,
+    "seed": 0,
+    "mean_e2e_ms": 617.64,
+    "ci_e2e_ms": [
+      605.81,
+      630.17
+    ],
+    "p50_e2e_ms": 611.32,
+    "p90_e2e_ms": 680.9,
+    "p99_e2e_ms": 710.88,
+    "breakdown_mean_ms": {
+      "stt": 205.04,
+      "llm_generation": 293.13,
+      "tts_ttfb": 119.47
+    }
+  },
+  "erasure": {
+    "contacts_tested": 25,
+    "tiers_audited": [
+      "redis",
+      "pgvector",
+      "postgres",
+      "falkordb",
+      "intent_events"
+    ],
+    "seed": 0,
+    "cascade_deletion_success_rate": 1.0,
+    "ci_success_rate": [
+      1.0,
+      1.0
+    ],
+    "zero_residual_verified": true
+  }
+}

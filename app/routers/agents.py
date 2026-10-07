@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 import httpx
@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.models.schemas import AgentCreate, AgentUpdate, AgentResponse
 from app.services.supabase_client import supabase
 from app.core.config import settings
+from app.routers.auth import require_authenticated_user
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
@@ -21,34 +22,68 @@ class RunAnalysisResponse(BaseModel):
     structured_data: Dict[str, Any] = {}
 
 @router.get("", response_model=List[AgentResponse])
-async def list_agents(org_id: UUID):
+async def list_agents(
+    org_id: UUID,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
+    if str(org_id) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: cannot access agents of another organization",
+        )
+    effective_org = current_user["org_id"]
     if not supabase:
         return []
-    res = supabase.table("agents").select("*").eq("org_id", str(org_id)).execute()
+    res = supabase.table("agents").select("*").eq("org_id", str(effective_org)).execute()
     return res.data or []
 
 @router.post("", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
-async def create_agent(agent: AgentCreate):
+async def create_agent(
+    agent: AgentCreate,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
-    res = supabase.table("agents").insert(agent.model_dump(mode="json")).execute()
+    agent_dict = agent.model_dump(mode="json")
+    agent_dict["org_id"] = current_user["org_id"]
+    res = supabase.table("agents").insert(agent_dict).execute()
     if not res.data:
         raise HTTPException(status_code=400, detail="Failed to create agent")
     return res.data[0]
 
 @router.get("/{agent_id}", response_model=AgentResponse)
-async def get_agent(agent_id: UUID):
+async def get_agent(
+    agent_id: UUID,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
     res = supabase.table("agents").select("*").eq("id", str(agent_id)).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Agent not found")
+    if str(res.data.get("org_id")) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: agent belongs to another organization",
+        )
     return res.data
 
 @router.put("/{agent_id}", response_model=AgentResponse)
-async def update_agent(agent_id: UUID, agent_update: AgentUpdate):
+async def update_agent(
+    agent_id: UUID,
+    agent_update: AgentUpdate,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
+    existing = supabase.table("agents").select("org_id").eq("id", str(agent_id)).single().execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if str(existing.data.get("org_id")) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: agent belongs to another organization",
+        )
     update_data = {k: v for k, v in agent_update.model_dump(mode="json").items() if v is not None}
     res = supabase.table("agents").update(update_data).eq("id", str(agent_id)).execute()
     if not res.data:
@@ -56,21 +91,43 @@ async def update_agent(agent_id: UUID, agent_update: AgentUpdate):
     return res.data[0]
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_agent(agent_id: UUID):
+async def delete_agent(
+    agent_id: UUID,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
+    existing = supabase.table("agents").select("org_id").eq("id", str(agent_id)).single().execute()
+    if existing.data and str(existing.data.get("org_id")) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: agent belongs to another organization",
+        )
     supabase.table("agents").delete().eq("id", str(agent_id)).execute()
     return None
 
 @router.post("/{agent_id}/publish")
-async def publish_agent(agent_id: UUID):
+async def publish_agent(
+    agent_id: UUID,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
+    existing = supabase.table("agents").select("org_id").eq("id", str(agent_id)).single().execute()
+    if existing.data and str(existing.data.get("org_id")) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: agent belongs to another organization",
+        )
     res = supabase.table("agents").update({"published": True}).eq("id", str(agent_id)).execute()
     return {"message": "Agent published successfully", "agent": res.data[0] if res.data else None}
 
 @router.post("/{agent_id}/enhance-prompt", response_model=EnhancePromptResponse)
-async def enhance_agent_prompt(agent_id: UUID, payload: EnhancePromptRequest):
+async def enhance_agent_prompt(
+    agent_id: UUID,
+    payload: EnhancePromptRequest,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     """
     Enhances system prompt using Groq's llama-3.3-70b-versatile model.
     """
@@ -127,7 +184,10 @@ async def enhance_agent_prompt(agent_id: UUID, payload: EnhancePromptRequest):
     return EnhancePromptResponse(enhanced_prompt=fallback_enhanced)
 
 @router.post("/{agent_id}/run-analysis", response_model=RunAnalysisResponse)
-async def run_agent_analysis(agent_id: UUID):
+async def run_agent_analysis(
+    agent_id: UUID,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     """
     Executes post-call AI analysis on the agent's most recent call record.
     """
@@ -140,8 +200,13 @@ async def run_agent_analysis(agent_id: UUID):
     if supabase:
         try:
             # 1. Fetch agent configuration
-            agent_res = supabase.table("agents").select("config").eq("id", str(agent_id)).single().execute()
+            agent_res = supabase.table("agents").select("config, org_id").eq("id", str(agent_id)).single().execute()
             if agent_res.data:
+                if str(agent_res.data.get("org_id")) != current_user["org_id"]:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Forbidden: agent belongs to another organization",
+                    )
                 agent_config = agent_res.data.get("config", {})
 
             # 2. Fetch latest call record for this agent

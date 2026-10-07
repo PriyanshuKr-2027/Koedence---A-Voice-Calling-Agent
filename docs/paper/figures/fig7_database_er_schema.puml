@@ -1,0 +1,92 @@
+﻿@startuml fig7_database_er_schema
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam entity {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    FontName Helvetica
+    FontSize 10.5
+}
+
+entity "organizations" as org {
+    * id : uuid <<PK>>
+    --
+    name : text
+    dpdp_compliance_mode : boolean
+    created_at : timestamptz
+}
+
+entity "agents" as agent {
+    * id : uuid <<PK>>
+    --
+    org_id : uuid <<FK>>
+    name : text
+    system_prompt : text
+    voice_provider : text (cartesia|sarvam|hume)
+    vad_threshold : float
+}
+
+entity "call_sessions" as session {
+    * id : uuid <<PK>>
+    --
+    agent_id : uuid <<FK>>
+    org_id : uuid <<FK>>
+    livekit_room_name : text
+    duration_seconds : integer
+    status : text (active|completed|interrupted)
+    started_at : timestamptz
+}
+
+entity "conversation_turns" as turn {
+    * id : uuid <<PK>>
+    --
+    session_id : uuid <<FK>>
+    turn_number : integer
+    speaker : text (user|agent)
+    transcript : text
+    embedding : vector(1536) <<HNSW Cosine>>
+    created_at : timestamptz
+}
+
+entity "emotion_vectors" as emotion {
+    * id : uuid <<PK>>
+    --
+    turn_id : uuid <<FK>>
+    acoustic_valence : float
+    acoustic_arousal : float
+    text_valence : float
+    fused_score : float
+    applied_tts_pitch : float
+    applied_tts_rate : float
+}
+
+entity "intent_tool_invocations" as intent {
+    * id : uuid <<PK>>
+    --
+    turn_id : uuid <<FK>>
+    predicted_intent : text
+    confidence_score : float
+    slot_constraint_ratio : float
+    connector_tool_fired : text
+    execution_status : text
+}
+
+entity "dpdp_audit_receipts" as audit {
+    * id : uuid <<PK>>
+    --
+    user_identifier_hash : text
+    requested_at : timestamptz
+    redis_cleared : boolean
+    pgvector_cleared : boolean
+    postgres_cleared : boolean
+    falkordb_cleared : boolean
+    erasure_signature : text
+}
+
+org ||--o{ agent : "provisions"
+agent ||--o{ session : "executes"
+session ||--o{ turn : "contains"
+turn ||--o| emotion : "annotates"
+turn ||--o| intent : "triggers"
+org ||--o{ audit : "logs compliance"
+@enduml

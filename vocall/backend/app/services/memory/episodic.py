@@ -43,6 +43,31 @@ async def create_episode(
     if not supabase or not transcript:
         return None
 
+    if contact_id:
+        try:
+            from app.services.redis_client import redis_client
+            if await redis_client.get(f"erasure:{contact_id}"):
+                logger.info("Contact %s has erasure flag set; skipping create_episode", contact_id)
+                return None
+        except Exception:
+            pass
+
+    # Check for existing episodic record for this call_id
+    if call_id and supabase:
+        try:
+            existing = (
+                supabase.table("memory_episodic")
+                .select("*")
+                .eq("call_id", call_id)
+                .limit(1)
+                .execute()
+            )
+            if existing.data and len(existing.data) > 0:
+                logger.info("Episodic memory record already exists for call %s; returning existing", call_id)
+                return existing.data[0]
+        except Exception as exc:
+            logger.warning("Could not check existing episodic memory for call %s: %s", call_id, exc)
+
     # Format transcript text if passed as list of turn dicts
     if isinstance(transcript, list):
         formatted_lines = []
@@ -94,22 +119,14 @@ async def create_episode(
             "emotion_arc": {"description": emotion_arc} if isinstance(emotion_arc, str) else emotion_arc,
         }
 
-        res = supabase.table("memory_episodic").insert(insert_payload).execute()
+        try:
+            res = supabase.table("memory_episodic").upsert(insert_payload, on_conflict="call_id").execute()
+        except Exception:
+            res = supabase.table("memory_episodic").insert(insert_payload).execute()
+
         if res.data:
             created_episode = res.data[0]
-            logger.info("Created episodic memory record for call %s", call_id)
-
-            # Auto-persist extracted key facts into long-term memory
-            if contact_id and isinstance(key_facts, list):
-                for fact in key_facts:
-                    if isinstance(fact, str) and fact.strip():
-                        await long_term.store_fact(
-                            contact_id=contact_id,
-                            org_id=org_id,
-                            agent_id=None,
-                            content=fact.strip(),
-                        )
-
+            logger.info("Created or upserted episodic memory record for call %s", call_id)
             return created_episode
     except Exception as exc:
         logger.error("Failed to create_episode for call %s: %s", call_id, exc)

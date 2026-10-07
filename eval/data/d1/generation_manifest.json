@@ -1,0 +1,15 @@
+{
+  "dataset": "D1",
+  "description": "Synthetic caller histories for memory evaluation",
+  "seed": 42,
+  "n_callers": 4,
+  "total_calls": 22,
+  "total_questions": 32,
+  "answer_model": "llama-3.3-70b-versatile",
+  "created_at": "2026-10-05T06:10:54.755709+00:00",
+  "files": {
+    "callers": "eval\\data\\d1\\callers.jsonl",
+    "calls": "eval\\data\\d1\\calls.jsonl",
+    "questions": "eval\\data\\d1\\questions.jsonl"
+  }
+}

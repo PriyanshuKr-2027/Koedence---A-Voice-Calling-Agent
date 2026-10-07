@@ -35,6 +35,7 @@ async def retrieve_all_memory(
     agent_id: Optional[str] = None,
     query_text: str = "",
     config: Optional[Dict[str, Any]] = None,
+    enabled_tiers: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Parallel retrieval across all memory tiers using asyncio.gather.
@@ -45,6 +46,9 @@ async def retrieve_all_memory(
         agent_id:   UUID of agent.
         query_text: Current user input or topic for semantic search.
         config:     Dict containing runtime settings (e.g. call_id).
+        enabled_tiers: Optional list of tiers to retrieve ('short_term'/'t1',
+                       'long_term'/'t2', 'episodic'/'t3', 'graph'/'t4').
+                       Defaults to None (all tiers enabled).
 
     Returns:
         Dict: {"short_term": dict|None, "long_term": list, "episodic": list, "graph": dict}
@@ -52,28 +56,38 @@ async def retrieve_all_memory(
     config = config or {}
     call_id = config.get("call_id")
 
+    # Determine enabled tiers (defaults to all if None)
+    if enabled_tiers is not None:
+        active_tiers = {str(t).lower().strip() for t in enabled_tiers}
+        is_t1 = any(t in active_tiers for t in ("short_term", "t1", "tier1"))
+        is_t2 = any(t in active_tiers for t in ("long_term", "t2", "tier2"))
+        is_t3 = any(t in active_tiers for t in ("episodic", "t3", "tier3"))
+        is_t4 = any(t in active_tiers for t in ("graph", "t4", "tier4"))
+    else:
+        is_t1 = is_t2 = is_t3 = is_t4 = True
+
     # Define tasks for parallel execution
     short_term_task = (
         short_term.get_call_memory(call_id)
-        if call_id
+        if (call_id and is_t1)
         else asyncio.sleep(0, result=None)
     )
 
     long_term_task = (
         long_term.retrieve_relevant_facts(contact_id, org_id, query_text)
-        if contact_id and org_id
+        if (contact_id and org_id and is_t2)
         else asyncio.sleep(0, result=[])
     )
 
     episodic_limit = config.get("episodic_limit", 3)
     episodic_task = (
         episodic.get_recent_episodes(contact_id, org_id, limit=episodic_limit)
-        if contact_id and org_id
+        if (contact_id and org_id and is_t3)
         else asyncio.sleep(0, result=[])
     )
     graph_task = (
         _fetch_graph_context(contact_id)
-        if contact_id
+        if (contact_id and is_t4)
         else asyncio.sleep(0, result={})
     )
 

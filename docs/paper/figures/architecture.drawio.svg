@@ -1,0 +1,16 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="621px" height="221px" viewBox="-0.5 -0.5 621 221">
+  <defs/>
+  <g>
+    <rect x="10" y="70" width="120" height="60" rx="9" ry="9" fill="#1e293b" stroke="#38bdf8" stroke-width="2" pointer-events="all"/>
+    <text x="70" y="105" fill="#f8fafc" font-family="Helvetica" font-size="14px" text-anchor="middle" font-weight="bold">LiveKit SFU</text>
+    <rect x="170" y="70" width="120" height="60" rx="9" ry="9" fill="#1e293b" stroke="#34d399" stroke-width="2" pointer-events="all"/>
+    <text x="230" y="105" fill="#f8fafc" font-family="Helvetica" font-size="14px" text-anchor="middle" font-weight="bold">Silero VAD</text>
+    <rect x="330" y="70" width="120" height="60" rx="9" ry="9" fill="#1e293b" stroke="#a78bfa" stroke-width="2" pointer-events="all"/>
+    <text x="390" y="105" fill="#f8fafc" font-family="Helvetica" font-size="14px" text-anchor="middle" font-weight="bold">Groq LPU</text>
+    <rect x="490" y="70" width="120" height="60" rx="9" ry="9" fill="#1e293b" stroke="#f472b6" stroke-width="2" pointer-events="all"/>
+    <text x="550" y="105" fill="#f8fafc" font-family="Helvetica" font-size="14px" text-anchor="middle" font-weight="bold">Cartesia TTS</text>
+    <path d="M 130 100 L 160 100" fill="none" stroke="#38bdf8" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke"/>
+    <path d="M 290 100 L 320 100" fill="none" stroke="#34d399" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke"/>
+    <path d="M 450 100 L 480 100" fill="none" stroke="#a78bfa" stroke-width="2" stroke-miterlimit="10" pointer-events="stroke"/>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+{
+  "parameters": {
+    "k": 5,
+    "tau": 0.75,
+    "episodic_limit": 3,
+    "seed": 0
+  },
+  "total_probes": 20,
+  "mean_recall_filtered": 0.925,
+  "ci_recall_filtered": [
+    0.8417,
+    1.0
+  ],
+  "mean_recall_baseline": 1.0,
+  "ci_recall_baseline": [
+    1.0,
+    1.0
+  ],
+  "mean_diff": -0.075,
+  "paired_p_value": 0.076
+}

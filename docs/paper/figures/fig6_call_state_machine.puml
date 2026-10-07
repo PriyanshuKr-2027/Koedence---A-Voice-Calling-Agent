@@ -1,0 +1,73 @@
+﻿@startuml fig6_call_state_machine
+skinparam state {
+    BackgroundColor #F8FAFC
+    BorderColor #334155
+    StartColor #0F172A
+    EndColor #0F172A
+    FontName Helvetica
+    FontSize 11
+}
+
+[*] --> Idle
+
+state Idle {
+    Idle : Ready for inbound / outbound call initiation
+}
+
+Idle --> WebRTC_Connecting : Call Token Requested
+state WebRTC_Connecting {
+    WebRTC_Connecting : LiveKit room creation & JWT handshake
+}
+
+WebRTC_Connecting --> Listening : PeerConnection Established (ICE Connected)
+
+state Listening {
+    Listening : Continuous 16kHz PCM audio stream ingestion
+    Listening : Silero VAD evaluating speech energy
+}
+
+Listening --> Endpointing : Speech detected & EOS reached (Silence > 300ms)
+
+state Endpointing {
+    Endpointing : Frame boundary verified
+    Endpointing : Utterance chunk packaged (< 85ms)
+}
+
+Endpointing --> Processing_Speculating : Utterance Event Dispatched
+
+state Processing_Speculating {
+    Processing_Speculating : Parallel 4-Tier Memory Fanout (<= 50ms)
+    Processing_Speculating : Groq LPU speculative token generation (TTFT <= 165ms)
+    Processing_Speculating : VA-ICECoT intent evaluation
+}
+
+Processing_Speculating --> Speaking_Synthesizing : First token chunk emitted
+
+state Speaking_Synthesizing {
+    Speaking_Synthesizing : Cartesia Sonic-2 streaming state-space TTS (< 78ms)
+    Speaking_Synthesizing : Opus RTP packets streaming to user
+    Speaking_Synthesizing : Simultaneous VAD background monitoring
+}
+
+Speaking_Synthesizing --> Listening : Audio playback completed naturally
+
+Speaking_Synthesizing --> Interrupted_BargingIn : User speech detected mid-playback
+
+state Interrupted_BargingIn {
+    Interrupted_BargingIn : 1. Dispatch WebRTC buffer clear
+    Interrupted_BargingIn : 2. Cancel active asyncio LLM generation task
+    Interrupted_BargingIn : 3. Terminate TTS socket connection (< 35ms total)
+}
+
+Interrupted_BargingIn --> Listening : Queue flushed & context updated
+
+Listening --> Call_Terminating : Disconnect signal / Hangup
+Speaking_Synthesizing --> Call_Terminating : Call completed / Goodbye intent
+
+state Call_Terminating {
+    Call_Terminating : Room tear-down & session audit logging
+    Call_Terminating : Post-call Trigger.dev evaluation workflows
+}
+
+Call_Terminating --> [*]
+@enduml

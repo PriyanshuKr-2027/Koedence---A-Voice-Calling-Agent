@@ -1,74 +1,85 @@
 # VoCall — System Architecture Document
 
-**Document Version:** 2.0  
-**Last Updated:** July 2026  
+**Document Version:** 2.1  
+**Last Updated:** September 2026  
 **Author:** Lead AI Systems Architect  
 **Status:** Approved Specification  
+**Related Documents:** [PRD.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/PRD.md), [TRD.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/TRD.md), [CONNECTORS.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/CONNECTORS.md), [MEMORY_GRAPH_RAG.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/MEMORY_GRAPH_RAG.md), [INTENT_EMOTION_ENGINE.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/INTENT_EMOTION_ENGINE.md)
 
 ---
 
-## 1. High-Level Architecture Overview
+## 1. High-Level 5-Tier Architecture Overview
 
 VoCall utilizes a five-tier microservices architecture separating real-time voice streaming from data storage and asynchronous background evaluation tasks:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
 │                                     CLIENT LAYER                                        │
-│   Next.js 14 Frontend (Vercel)                                                          │
-│   Dashboard | Agent Studio | Contacts & 4-Tier Memory | WebCallModal ("Ananya UI")      │
+│   Primary Interactive App: Vite 8 + React 19 + Framer Motion 12 (`src/`)                │
+│   Enterprise Dashboard: Next.js 14 App Router (`vocall/frontend/`)                      │
+│   Agent Studio | WebCallModal Testing | Contacts & 4-Tier Memory | Calls Audit Replay   │
 └────────────────────────────┬────────────────────────────────────────────────────────────┘
-                             │ REST (HTTPS) + WebRTC (SRTP) / WebSockets (WSS)
+                             │ REST (HTTPS) + WebRTC (SRTP) / Server-Sent Events (SSE)
 ┌────────────────────────────▼────────────────────────────────────────────────────────────┐
 │                                      API LAYER                                          │
-│   FastAPI Backend Service (Railway / Docker)                                            │
-│   Auth | Agent Router | Call Controller | 4-Tier Memory RAG | Emotion Fusion Engine     │
-│   Intent & Compliance Router | VA-ICECoT Engine (Intent/Slot Classifier & Combined Rules) │
+│   FastAPI Backend Service (`app/main.py`)                                               │
+│   Routers: /api/v1/auth, /api/v1/agents, /api/v1/calls, /api/v1/contacts,               │
+│            /api/connectors, /api/v1/phone-numbers, /api/v1/api-keys, /api/v1/webhooks,  │
+│            /api/v1/memory, /api/v1/emotion, /api/v1/intent                              │
+│   Streaming: Server-Sent Events (SSE) on /api/v1/calls/webcall/{call_id}/events         │
+│   Central Action Connector Dispatcher (`fire_connector()`)                              │
 └────┬──────────────┬──────────────┬──────────────┬──────────────┬────────────────────────┘
      │              │              │              │              │
 ┌────▼────┐   ┌─────▼────┐   ┌─────▼────┐   ┌─────▼────┐   ┌─────▼────────────────────────┐
 │Supabase │   │Upstash   │   │FalkorDB  │   │Voice     │   │External Provider APIs        │
-│Postgres │   │Redis     │   │(Cypher   │   │Pipeline  │   │Groq LPU (LLM 70B / Whisper)  │
-│pgvector │   │(Short-   │   │ Knowledge│   │Pipecat + │   │Cerebras AI (Fallback LLM)    │
-│Auth &   │   │ Term     │   │ Graph)   │   │LiveKit   │   │Sarvam AI (Hinglish STT/TTS)  │
-│Storage  │   │ Memory)  │   └──────────┘   └──────────┘   │Cartesia (Sonic-2 TTS)        │
-└─────────┘   └──────────┘                                 │Hume AI (EVI Emotion & TTS)   │
+│Postgres │   │Redis     │   │(Open-    │   │Pipelines │   │Groq LPU (LLM 70B / Whisper)  │
+│pgvector │   │(Short-   │   │ Cypher   │   │LiveKit + │   │Cerebras AI (Fallback LLM)    │
+│Auth &   │   │ Term     │   │ Knowledge│   │Pipecat   │   │Sarvam AI (Hinglish STT/TTS)  │
+│Storage  │   │ Memory)  │   │ Graph)   │   │WebCall   │   │Cartesia (Sonic-2 TTS)        │
+└─────────┘   └──────────┘   └──────────┘   └──────────┘   │Hume AI (EVI Emotion & TTS)   │
 ┌──────────────────────────────────────────────────────────┤Twilio / Exotel / Plivo (BYOK) │
-│   Async Background Layer (Trigger.dev Engine)            └──────────────────────────────┘
-│   Post-call summary, fact extraction, graph updating     
+│   Async Background Layer (Trigger.dev Engine)            │8 Action Connectors (AES-256) │
+│   Post-call summary, fact extraction, graph updating     └──────────────────────────────┘
 └──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Real-Time Media & Voice Pipeline (Pipecat + LiveKit)
+## 2. Real-Time Media & Voice Pipelines (WebCall & Telephony)
+
+VoCall provides dual ingress pathways for voice calls:
 
 ```text
-Caller Phone / Web Browser ("Ananya UI")
-         │
-         ├── [WebCall] WebRTC SRTP Stream  --> LiveKit Room (LiveKit Cloud)
-         └── [Telephony] SIP WebSocket     --> Twilio / Exotel / Plivo
-                                                    │
-                                                    ▼
-                                         FastAPI Pipecat Engine
-                                                    │
-     ┌──────────────────────────────────────────────┴──────────────────────────────────────────────┐
-     │ REAL-TIME VOICE TURN LOOP                                                                   │
-     │                                                                                             │
-     │  1. Ingest Audio Packet -> Resample to 16kHz PCM                                           │
-     │  2. STT Engine: Groq Whisper Large-v3 (English) OR Sarvam Saarika (Hinglish)               │
-     │  3. Dual Emotion Engine (Parallel):                                                         │
-     │     - Audio Signal: Hume AI Expression API                                                  │
-     │     - Text Signal: Groq LLaMA 3.3 70B JSON sentiment                                       │
-     │     - Fused Valence = 0.6 * Audio + 0.4 * Text                                             │
-     │  4. VA-ICECoT Engine & Intent Resolution:                                                   │
-     │     - Intent Classification & Slot Extraction (`detector.py` / `slot_manager.py`)          │
-     │     - Emotion x Intent Combined Rules Evaluation (`combined_rules.py`)                     │
-     │     - Auto-fire Resolution Chain Connectors on 100% Slot Completion (`resolver.py`)        │
-     │  5. LLM Generation: Groq LLaMA 3.3 70B (Streaming, TTFT ~150ms)                             │
-     │     - If Valence < -0.40 OR Combined Rule Fired: Inject Adaptive Tone Instruction           │
-     │  6. TTS Synthesis: Cartesia Sonic-2 (sub-80ms) OR Sarvam Bulbul / Hume Octave 2            │
-     │  7. Push Audio Frame to WebRTC Output Track & Append turn to Upstash Redis stm:{call_id}    │
-     └─────────────────────────────────────────────────────────────────────────────────────────────┘
+                                   CALL INGRESS
+                                         │
+        ┌────────────────────────────────┴────────────────────────────────┐
+        ▼                                                                 ▼
+[In-Browser WebCall]                                            [Telephony PSTN]
+WebRTC SRTP via LiveKit                                         SIP WebSocket via Twilio / Plivo
+(`app/services/webcall_pipeline.py`)                           (`app/services/voice_pipeline.py`)
+        │                                                                 │
+        └────────────────────────────────┬────────────────────────────────┘
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ REAL-TIME VOICE TURN LOOP                                                                   │
+│                                                                                             │
+│  1. Ingest Audio Packet -> Resample to 16kHz PCM                                           │
+│  2. STT Engine: Groq Whisper Large-v3 (English) OR Sarvam Saarika v2 (Hinglish)             │
+│  3. Dual Emotion Engine (Parallel):                                                         │
+│     - Audio Signal: Hume AI Expression API (43 paralinguistic tone scores -> Circumplex)    │
+│     - Text Signal: Groq LLaMA 3.3 70B JSON sentiment extraction                             │
+│     - Fused Score: E_fused = 0.6 * Audio + 0.4 * Text                                       │
+│  4. VA-ICECoT Engine (`app/services/voice/va_icecot.py`):                                  │
+│     - Intention-Centric Chain-of-Thought reasoning with <meta_thought> tags                 │
+│     - Dynamic slot extraction & prompt tracking (`slot_manager.py`)                         │
+│     - Emotion x Intent Combined Rules Evaluation (`combined_rules.py`)                     │
+│     - Auto-fire Resolution Chain Connectors on 100% Slot Completion (`resolver.py`)        │
+│  5. LLM Generation: Groq LLaMA 3.3 70B (Streaming, TTFT ~150ms)                             │
+│     - If Frustration ≥ 0.70: Inject Adaptive Tone Instruction (`tone_adapter.py`)           │
+│  6. TTS Synthesis: Cartesia Sonic-2 (<80ms) OR Sarvam Bulbul / Hume Octave 2                │
+│  7. Audio Frame Output to WebRTC Track + SSE Event Streamed to Dashboard                    │
+│  8. Turn Appended to Upstash Redis buffer `stm:{call_id}`                                   │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -83,11 +94,12 @@ Caller Phone / Web Browser ("Ananya UI")
        ┌──────────────────┬───────────────┴───────────────┬──────────────────┐
        │                  │                               │                  │
 ┌──────▼──────┐    ┌──────▼──────┐                 ┌──────▼──────┐    ┌──────▼──────┐
+│ Tier 1:     │    │ Tier 2:     │                 │ Tier 3:     │    │ Tier 4:     │
 │ Upstash     │    │ Supabase    │                 │ Supabase    │    │ FalkorDB    │
 │ Redis       │    │ pgvector    │                 │ Postgres    │    │ Graph       │
 ├─────────────┤    ├─────────────┤                 ├─────────────┤    ├─────────────┤
-│ Check active│    │ Cosine      │                 │ Last 3      │    │ Cypher      │
-│ call state /│    │ similarity  │                 │ episodic    │    │ entity      │
+│ Check active│    │ Cosine      │                 │ Last 3      │    │ OpenCypher  │
+│ call state /│    │ similarity  │                 │ episodic    │    │ entity &    │
 │ resume key  │    │ top-5 facts │                 │ call        │    │ frustration │
 │             │    │             │                 │ summaries   │    │ paths       │
 └──────┬──────┘    └──────┬──────┘                 └──────┬──────┘    └──────┬──────┘
@@ -98,82 +110,60 @@ Caller Phone / Web Browser ("Ananya UI")
                       System Prompt Dynamic Context Injection:
                       ┌───────────────────────────────────────────────┐
                       │ [RECALLED CONTACT CONTEXT]                    │
-                      │ - Last Call Summary: {episode_summary}        │
-                      │ - Relevant Facts: {pgvector_top5_facts}       │
-                      │ - Known Frustrations: {falkordb_graph_nodes}  │
+                      │ Facts: High-tier customer, prefers Hindi      │
+                      │ Episode 1: Refund issue resolved 3 days ago   │
+                      │ Graph: Mentions entity 'Invoice-992'          │
+                      │ Frustrations: Payment failure recorded        │
                       └───────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Post-Call Async Pipeline Architecture (Trigger.dev)
+## 4. Action Connectors & Security Architecture
+
+The Action Connector Subsystem provides mid-call tool calling and post-call background synchronizations:
 
 ```text
-                                      CALL ENDED EVENT
-                                              │
-                              Trigger.dev Task Fired (No Timeout)
-                                              │
-  ┌───────────────────────────────────────────┴───────────────────────────────────────────┐
-  │ POST-CALL PIPELINE EXECUTION                                                          │
-  │                                                                                       │
-  │  Step 1: Pull complete transcript and emotion buffer from Upstash Redis               │
-  │  Step 2: Generate 2-3 sentence episode summary + key extracted facts via Groq 70B     │
-  │  Step 3: Generate 1536d vector embeddings of new facts and upsert to pgvector         │
-  │  Step 4: Persist episode row in Supabase Postgres                                     │
-  │  Step 5: Extract entities/topics & execute Cypher queries in FalkorDB Knowledge Graph │
-  │  Step 6: Evaluate call CSAT score and task completion status                          │
-  │  Step 7: Dispatch post-call connectors (WhatsApp summary, HubSpot CRM, Resend email)  │
-  │  Step 8: Flush ephemeral Redis short-term key stm:{call_id}                           │
-  └───────────────────────────────────────────────────────────────────────────────────────┘
+                               ┌────────────────────────────────┐
+                               │       CENTRAL DISPATCHER       │
+                               │       `fire_connector()`       │
+                               │     (Mounted /api/connectors)  │
+                               └───────────────┬────────────────┘
+                                               │
+         ┌─────────────────┬───────────────────┼───────────────────┬─────────────────┐
+         │                 │                   │                   │                 │
+┌────────▼───────┐ ┌───────▼───────┐   ┌───────▼───────┐   ┌───────▼───────┐ ┌───────▼───────┐
+│ WhatsApp       │ │ Google Cal    │   │ HubSpot CRM   │   │ Salesforce    │ │ Slack         │
+│ (Twilio API)   │ │ (OAuth2 Free/ │   │ (Contact/Deal)│   │ (OAuth2 Task) │ │ (Block Kit)   │
+│ Post-Call SMS  │ │ Busy & Event) │   │               │   │               │ │ Live Alert    │
+└────────────────┘ └───────────────┘   └───────────────┘   └───────────────┘ └───────────────┘
+         │                 │                   │                   │                 │
+┌────────▼───────┐ ┌───────▼───────┐   ┌───────▼───────┐           │                 │
+│ Custom Webhook │ │ Supabase / PG │   │ Tone Adapter  │◄──────────┴─────────────────┘
+│ (HMAC Signed)  │ │ (SQL Query)   │   │ (Prompt Mod)  │   Mid-Call Emotion Adaptation
+└────────────────┘ └───────────────┘   └───────────────┘
 ```
 
 ---
 
-## 5. Hinglish Code-Switching Pipeline
+## 5. Asynchronous Background Layer (Trigger.dev Engine)
 
-```text
-Caller Audio (Hindi / English / Hinglish Mix)
-        │
-   Language Router (Sarvam AI auto-detects or agent configuration)
-        │
-   STT: Sarvam Saarika v2 -> Preserves exact phonetic Hinglish code-switching
-        │
-   LLM: Groq LLaMA 3.3 70B + System Prompt Instruction:
-        "Respond in natural Hinglish matching the caller's language ratio. Do not force pure English."
-        │
-   TTS: Sarvam Bulbul v2 (Hindi/Hinglish) OR Cartesia Sonic-2 (English)
+When a call session completes, the background worker executes an 8-stage post-call workflow in `trigger/post_call_pipeline.py`:
+
+```mermaid
+flowchart TD
+    A[Call Disconnected] --> B[Fetch Complete Turns from Redis stm:call_id]
+    B --> C[Stage 1: Groq LLaMA 3.3 Call Summarization]
+    C --> D[Stage 2: Entity & Topic Extraction]
+    D --> E[Stage 3: Generate 1536-dim Embeddings]
+    E --> F[Stage 4: Store Episodic Summary in Postgres]
+    F --> G[Stage 5: Upsert Long-Term Facts in pgvector]
+    G --> H[Stage 6: Upsert Cypher Nodes/Edges in FalkorDB]
+    H --> I[Stage 7: Purge Redis stm:call_id Buffer]
+    I --> J[Stage 8: Parallel Fanout of Enabled Post-Call Connectors]
+    J --> K[WhatsApp Notification + Slack Summary + CRM Lead Update + Email Report]
 ```
 
 ---
 
-## 6. Security, Authentication & DPDP Compliance Topology
-
-- **Data Encryption:** BYOK API credentials encrypted at rest using AES-256-GCM.
-- **Tenant Isolation:** Supabase Row-Level Security (RLS) enforcing organization boundary checks (`auth.uid() -> org_id`).
-- **DPDP Act Compliance:** API endpoint `DELETE /api/contacts/{id}/memory` triggers an atomic cascading delete across Redis, pgvector, Postgres, and FalkorDB graph nodes.
-
----
-
-## 7. Deployment Topology
-
-### 7.1 Serverless Cloud Deployment (Recommended)
-
-- **Frontend App:** Vercel (Next.js 14 App Router).
-- **Backend API:** Railway Container / AWS ECS (FastAPI + Pipecat).
-- **Databases:** Supabase Cloud (Postgres + pgvector), Upstash Redis Cloud, FalkorDB Cloud.
-- **Media Server:** LiveKit Cloud.
-- **Background Jobs:** Trigger.dev Cloud.
-
-### 7.2 Self-Hosted Docker Compose (`docker-compose.yml`)
-
-- Single or multi-node container orchestration for isolated enterprise environments:
-  - `next-frontend` (Port 3000)
-  - `fastapi-backend` (Port 8000)
-  - `livekit-server` (Port 7880)
-  - `postgres-pgvector` (Port 5432)
-  - `upstash-redis` (Port 6379)
-  - `falkordb` (Port 6379 / 6380)
-
----
-
-Approved and Maintained by VoCall Architecture Team.
+Approved by VoCall Technical Architecture Team.

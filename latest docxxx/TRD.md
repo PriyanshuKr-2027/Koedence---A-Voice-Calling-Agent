@@ -5,6 +5,7 @@
 **Date:** July 2026  
 **Author:** Lead AI Systems Architect  
 **Target Platform:** VoCall Voice AI Platform Engine  
+**Related Documents:** [PRD.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/PRD.md), [architecture.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/architecture.md), [CONNECTORS.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/CONNECTORS.md), [MEMORY_GRAPH_RAG.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/MEMORY_GRAPH_RAG.md), [INTENT_EMOTION_ENGINE.md](file:///c:/Users/10pri/Downloads/VOCALL%2019%20JULY/latest%20docxxx/INTENT_EMOTION_ENGINE.md)
 
 ---
 
@@ -16,15 +17,18 @@ VoCall's technical architecture is engineered to resolve three primary challenge
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                 VOCALL TECHNOLOGY STACK                                      │
 ├───────────────────┬─────────────────────────────────────────────────────────────────────────┤
-│ **Frontend App**  │ Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS v4, Lucide  │
-│ **Landing Page**  │ React 18, Vite, Tailwind CSS v4                                         │
+│ **Interactive App**│ Vite 8, React 19, Framer Motion 12, Recharts 3, Tailwind CSS, Lucide   │
+│ **Dashboard App**  │ Next.js 14 (App Router), React 18, Radix UI, Trigger.dev SDK           │
 │ **Backend API**   │ Python 3.10+, FastAPI, Uvicorn, Pydantic v2, Asyncio                   │
 │ **Media Engine**  │ Pipecat AI Framework, LiveKit Cloud WebRTC Server                       │
 │ **LLM Engine**    │ Groq LPU (llama-3.3-70b-versatile), Cerebras AI (Fallback)             │
 │ **STT Engine**    │ Groq Whisper Large-v3 (English), Sarvam AI Saarika v2 (Hindi/Hinglish)  │
 │ **TTS Engine**    │ Cartesia Sonic-2 (English), Sarvam Bulbul v2 (Hinglish), Hume Octave 2 │
 │ **Emotion Engine**│ Hume AI EVI / Expression API (Audio) + Groq NLP JSON (Text)             │
+│ **Intent Engine** │ VA-ICECoT (Voice Agent Intention-Centric Chain-of-Thought)             │
 │ **Databases**     │ Supabase Postgres + pgvector, Upstash Redis, FalkorDB Graph             │
+│ **Connectors**    │ 8 Action Connectors (WhatsApp, GCal, HubSpot, SF, Slack, Webhook, SQL) │
+│ **Security**      │ AES-256-GCM BYOK Credential Encryption, DPDP 2023 "Forget Me" Engine   │
 │ **Background**    │ Trigger.dev Engine                                                      │
 │ **Telephony**     │ Twilio, Exotel, Plivo (BYOK)                                            │
 └───────────────────┴─────────────────────────────────────────────────────────────────────────┘
@@ -56,11 +60,11 @@ gantt
     WebRTC Packet Transmission           : 470, 495
 ```
 
-- **Total Budget:** $\le 495\text{ ms}$
-- **STT (Groq Whisper):** $\sim 150\text{ ms}$
+- **Total Latency Budget:** $\le 495\text{ ms}$
+- **STT (Groq Whisper / Sarvam Saarika):** $\sim 150\text{ ms}$
 - **Emotion & Context Fanout:** $\sim 30\text{ ms}$ (executed concurrently)
 - **LLM TTFT (Groq LLaMA 3.3 70B):** $\sim 150\text{ ms}$
-- **TTS TTFAB (Cartesia Sonic-2):** $\sim 80\text{ ms}$
+- **TTS TTFAB (Cartesia Sonic-2 / Sarvam Bulbul):** $\sim 80\text{ ms}$
 - **Network Transport (WebRTC SRTP):** $\sim 25\text{ ms}$
 
 ---
@@ -71,9 +75,9 @@ gantt
 
 ```text
 1. Browser Client opens WebCallModal ("Ananya UI")
-2. POST /api/webcall/token { agent_id, contact_name }
+2. POST /api/v1/calls/token { agent_id, contact_name }
    ├── FastAPI validates agent & contact (creates contact row if new)
-   ├── Issue LiveKit WebRTC AccessToken with room permissions
+   ├── Issue LiveKit WebRTC AccessToken with room permissions (`call-{call_id}`)
    └── Returns { token, room_name, call_id }
 3. Client connects to LiveKit Cloud Room (wss://livekit.cloud)
 4. FastAPI spawns Pipecat Pipeline Instance:
@@ -88,7 +92,7 @@ gantt
 
 ```text
 1. Caller dials Twilio PSTN Phone Number
-2. Twilio sends HTTP POST to FastAPI `/webhooks/twilio/inbound`
+2. Twilio sends HTTP POST to FastAPI `/api/v1/webhooks/twilio/inbound`
 3. FastAPI looks up agent by `phone_number` and contact by `caller_id`
 4. FastAPI returns TwiML Response:
    <Response>
@@ -102,243 +106,114 @@ gantt
 
 ---
 
-## 4. Dual-Signal Emotion Fusion Algorithm & Technical Spec
-
-### 4.1 Input Signals
-
-1. **Audio Signal ($E_{audio}$):** Extracted per caller turn from Hume AI Expression Measurement API ($Valence_a \in [-1, 1]$, $Arousal_a \in [0, 1]$, $Dominant_a$, $Confidence_a$).
-2. **Text Signal ($E_{text}$):** Extracted per caller turn from transcript via Groq `llama-3.3-70b` in JSON mode ($Valence_t \in [-1, 1]$, $Arousal_t \in [0, 1]$, $Dominant_t$, $Confidence_t$).
-
-### 4.2 Mathematical Fusion Model
-
-$$Valence_{fused} = \begin{cases}
-0.6 \cdot Valence_a + 0.4 \cdot Valence_t & \text{if } Confidence_a \ge 0.50 \\
-Valence_t & \text{if Audio unavailable or } Confidence_a < 0.50
-\end{cases}$$
-
-$$Dominant_{fused} = \begin{cases}
-Dominant_a & \text{if } Confidence_a \ge 0.60 \\
-Dominant_t & \text{otherwise}
-\end{cases}$$
-
-### 4.3 Runtime Adaptation Handlers
-- **Empathetic System Prompt Injection:** If $Valence_{fused} < -0.40$, prepend to current turn LLM system prompt:
-  ```text
-  [EMOTION ALERT: Caller valence is negative (-0.48, Frustrated). Soften your tone, slow down your pace, validate their feeling first, and keep responses under 2 sentences.]
-  ```
-- **Hume Octave TTS Voice Modulation:** Pass `emotion_state` payload to Hume Octave API:
-  ```json
-  {
-    "voice_id": "octave_empathic_01",
-    "emotion_params": {
-      "warmth": 0.85,
-      "pace_multiplier": 0.90,
-      "pitch_softness": 0.75
-    }
-  }
-  ```
-
----
-
-## 5. 4-Tier Memory Technical Specification
+## 4. Multi-Tier Cognitive Memory Engine Specifications
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   4-TIER MEMORY STORAGE ENGINE                                  │
-├─────────────────┬─────────────────┬───────────────────┬─────────────────────────────────────────┤
-│ Tier            │ Engine          │ Data Structure    │ Persistence & Key TTL                   │
-├─────────────────┼─────────────────┼───────────────────┼─────────────────────────────────────────┤
-│ 1. Short-Term   │ Upstash Redis   │ JSON Array        │ Ephemeral: Call Duration + 300s TTL     │
-│ 2. Long-Term    │ Supabase        │ pgvector (1536d)  │ Permanent (Cosine similarity top-5)     │
-│ 3. Episodic     │ Supabase        │ Postgres Relational│ Permanent (Chronological last 3 summaries)│
-│ 4. Knowledge    │ FalkorDB        │ Cypher Graph      │ Permanent (Entity relationship graph)   │
-└─────────────────┴─────────────────┴───────────────────┴─────────────────────────────────────────┘
+┌────────────────────────┬─────────────────────────┬──────────────────────────┬────────────────────────┐
+│ TIER 1: SHORT-TERM     │ TIER 2: LONG-TERM       │ TIER 3: EPISODIC         │ TIER 4: KNOWLEDGE GRAPH│
+├────────────────────────┼─────────────────────────┼──────────────────────────┼────────────────────────┤
+│ **Storage Engine:**    │ **Storage Engine:**     │ **Storage Engine:**      │ **Storage Engine:**    │
+│ Upstash Redis (REST)   │ Supabase pgvector       │ Supabase PostgreSQL      │ FalkorDB (OpenCypher)  │
+│ **Key / Table:**       │ **Key / Table:**        │ **Key / Table:**         │ **Key / Table:**       │
+│ `stm:{call_id}`        │ `memory_long_term`      │ `memory_episodic`        │ `Contact`, `Episode`,  │
+│                        │                         │                          │ `Entity`, `Topic`      │
+│ **Vector Size:**       │ **Vector Size:**        │ **Vector Size:**         │ **Vector Size:**       │
+│ N/A (JSON buffer)      │ 1536-dim (OpenAI)       │ N/A (Relational JSON)    │ N/A (Graph nodes/edges)│
+│ **Retrieval Latency:** │ **Retrieval Latency:**  │ **Retrieval Latency:**   │ **Retrieval Latency:** │
+│ < 5 ms                 │ < 30 ms (HNSW cosine)   │ < 15 ms                  │ < 10 ms (In-memory)    │
+└────────────────────────┴─────────────────────────┴──────────────────────────┴────────────────────────┘
 ```
 
-### 5.1 Parallel RAG Retrieval Engine (`retrieve_all_memory`)
-
-FastAPI uses `asyncio.gather` to execute memory fanout across all four engines in parallel:
-
-```python
-async def retrieve_all_memory(contact_id: str, current_query: str) -> Dict[str, Any]:
-    redis_task = fetch_short_term_buffer(contact_id)
-    vector_task = query_long_term_facts(contact_id, current_query, limit=5)
-    episodic_task = fetch_last_episodes(contact_id, limit=3)
-    graph_task = query_falkordb_graph(contact_id)
-
-    stm, ltm, episodes, graph = await asyncio.gather(
-        redis_task, vector_task, episodic_task, graph_task
-    )
-    return format_memory_prompt_block(stm, ltm, episodes, graph)
+### 4.1 Redis Working Memory Schema
+```json
+{
+  "call_id": "c7a8b2d1-0000-0000-0000-000000000000",
+  "contact_id": "e9f0a1b2-1111-1111-1111-111111111111",
+  "turns": [
+    {"role": "user", "content": "I want to reschedule my appointment.", "timestamp": 1721389200},
+    {"role": "assistant", "content": "Sure, what day works best?", "timestamp": 1721389202}
+  ],
+  "current_emotion": {"valence": -0.2, "arousal": 0.4, "frustration": 0.1},
+  "slots": {"appointment_date": "2026-08-30", "service_type": "consultation"},
+  "active_tools": ["check_availability", "book_appointment"]
+}
 ```
 
----
-
-## 6. Database Schemas & Cypher Graph Model
-
-### 6.1 PostgreSQL DDL (Supabase)
-
-```sql
--- Enable Vector Extension
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Organizations & Agents
-CREATE TABLE organizations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE agents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    system_prompt TEXT NOT NULL,
-    language TEXT DEFAULT 'en',
-    voice_provider TEXT DEFAULT 'cartesia',
-    voice_id TEXT NOT NULL,
-    config JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Contacts & Calls
-CREATE TABLE contacts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    phone_number TEXT,
-    email TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE calls (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id UUID REFERENCES agents(id),
-    contact_id UUID REFERENCES contacts(id),
-    status TEXT NOT NULL CHECK (status IN ('initiated', 'in_progress', 'completed', 'failed')),
-    duration_seconds INT DEFAULT 0,
-    emotion_score FLOAT,
-    transcript JSONB DEFAULT '[]'::jsonb,
-    analysis JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Tier 2: Long-Term Memory (pgvector)
-CREATE TABLE memory_long_term (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
-    fact TEXT NOT NULL,
-    embedding VECTOR(1536),
-    emotion_state JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_long_term_vec ON memory_long_term USING ivfflat (embedding vector_cosine_ops);
-
--- Tier 3: Episodic Memory
-CREATE TABLE memory_episodic (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
-    call_id UUID REFERENCES calls(id) ON DELETE CASCADE,
-    summary TEXT NOT NULL,
-    key_facts JSONB DEFAULT '[]'::jsonb,
-    emotion_arc JSONB DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Intent & Compliance Engine Tables (VA-ICECoT)
-CREATE TABLE agent_intents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    description TEXT,
-    confidence_threshold FLOAT DEFAULT 0.7,
-    resolution_chain JSONB DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE intent_slots (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    intent_id UUID REFERENCES agent_intents(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    slot_type TEXT NOT NULL,
-    required BOOLEAN DEFAULT true,
-    prompt_question TEXT,
-    validation_regex TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE combined_emotion_intent_rules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
-    intent_name TEXT NOT NULL,
-    emotion_condition TEXT NOT NULL,
-    action TEXT NOT NULL,
-    instruction TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE compliance_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    call_id UUID REFERENCES calls(id) ON DELETE CASCADE,
-    disclosure_type TEXT NOT NULL,
-    status TEXT NOT NULL,
-    verified_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### 6.2 FalkorDB Cypher Knowledge Graph Model
-
+### 4.2 FalkorDB OpenCypher Schema
 ```cypher
-// Node Schema
-(:Contact {id: "cnt_123", name: "Priyanshu"})
-(:Entity {name: "Billing Issue", category: "Topic"})
-(:Episode {call_id: "call_456", date: "2026-07-22"})
-(:Emotion {type: "Frustration", score: 0.82})
-
-// Relationships
-(:Contact)-[:MENTIONED]->(:Entity)
-(:Contact)-[:FRUSTRATED_ABOUT {severity: 0.82}]->(:Entity)
-(:Episode)-[:OCCURRED_IN]->(:Contact)
-(:Entity)-[:LEADS_TO]->(:Entity)
-
-// RAG Retrieval Query
-MATCH (c:Contact {id: $contact_id})-[r:FRUSTRATED_ABOUT]->(e:Entity)
-RETURN e.name AS topic, r.severity AS score
-ORDER BY r.severity DESC LIMIT 5
+(:Contact {id, name, phone, email})
+  -[:HAD_EPISODE]-> (:Episode {id, call_id, date, summary, outcome})
+  -[:MENTIONED_ENTITY]-> (:Entity {name, type})
+  -[:DISCUSSED_TOPIC]-> (:Topic {name})
+  -[:EXPERIENCED_FRUSTRATION]-> (:FrustrationEvent {intensity, trigger_phrase})
 ```
 
 ---
 
-## 7. Async Post-Call Pipeline (Trigger.dev)
+## 5. VA-ICECoT Intent Engine & Emotion Fusion
 
-When a call completes (`POST /webhooks/twilio/status` or `WebCallModal` end event), FastAPI dispatches the `postCallPipeline` job to Trigger.dev:
+1. **Acoustic Feature Extraction:** Audio byte chunks sampled at 16kHz sent to Hume AI EVI websocket for pitch variance, tension, and valence/arousal extraction.
+2. **Text Sentiment Extraction:** Transcribed text processed via Groq LLaMA 3.3 70B in JSON mode.
+3. **Convex Fusion:** $E_{\text{fused}} = \alpha \cdot E_{\text{audio}} + (1-\alpha) \cdot E_{\text{text}}$.
+4. **VA-ICECoT Reasoning Chain:**
+   $$\text{Observed Emotion} \longrightarrow \text{Underlying Trigger} \longrightarrow \text{Target Intent} \longrightarrow \text{Modulated Tone Plan}$$
+5. **Evaluation Metric (JRBM):**
+   $$JRBM = \frac{2 \cdot \text{Micro-F1}_{\text{emotion}} \cdot \text{Micro-F1}_{\text{intent}}}{\text{Micro-F1}_{\text{emotion}} + \text{Micro-F1}_{\text{intent}}}$$
+
+---
+
+## 6. Action Connectors & Security Architecture
+
+1. **Universal Connector Dispatcher (`app/services/connectors/dispatcher.py`):**
+   - Routes executions to WhatsApp, Google Calendar, HubSpot, Salesforce, Slack, Webhooks, Postgres/Supabase SQL, and Tone Adapter.
+2. **AES-256-GCM Credential Vault (`app/utils/encryption.py`):**
+   - 12-byte IV nonce + 128-bit authentication tag.
+   - Base64 ciphertext storage in `connector_configs.config`.
+3. **DPDP Act 2023 "Forget Me" Protocol:**
+   - Single atomic call wipes Redis keys, Postgres relational rows, pgvector embeddings, and FalkorDB graph nodes.
+
+---
+
+## 7. Asynchronous Post-Call Processing Pipeline (Trigger.dev)
+
+Upon call disconnect (`livekit_events` webhook or PSTN hangup), the 8-stage post-call pipeline executes asynchronously:
 
 ```mermaid
-graph TD
-    A[Call Ended Event] --> B[Trigger.dev Task Fired]
-    B --> C[Step 1: Pull Live Transcript & Emotion Buffer from Redis]
-    C --> D[Step 2: Generate 3-Sentence Summary & Facts via Groq]
-    D --> E[Step 3: Generate 1536d Fact Embeddings & Upsert to pgvector]
-    E --> F[Step 4: Write Episodic Row to Supabase Postgres]
-    F --> G[Step 5: Extract Entities & Update FalkorDB Cypher Graph]
-    G --> H[Step 6: Evaluate Call Success & Metrics]
-    H --> I[Step 7: Execute Post-Call Connectors - WhatsApp / HubSpot]
-    I --> J[Step 8: Clear Upstash Redis Key stm:call_id]
+flowchart TD
+    A[Call Terminated] --> B[Fetch Audio & Transcript from Redis]
+    B --> C[Stage 1: Groq LLaMA 3.3 Summarization]
+    C --> D[Stage 2: Entity & Topic Extraction]
+    D --> E[Stage 3: Generate 1536-dim Embeddings]
+    E --> F[Stage 4: Store Episodic Summary in Postgres]
+    F --> G[Stage 5: Upsert Long-Term Facts in pgvector]
+    G --> H[Stage 6: Upsert Cypher Nodes/Edges in FalkorDB]
+    H --> I[Stage 7: Purge Redis stm:call_id Buffer]
+    I --> J[Stage 8: Parallel Fanout of Enabled Post-Call Connectors]
+    J --> K[WhatsApp Summary + Slack Block Kit + CRM Sync + Email Report]
 ```
 
 ---
 
-## 8. Data Security & DPDP Compliance Suite
+## 8. Database Schema Inventory (15 Supabase Tables)
 
-1. **BYOK Encryption:** API Keys (Groq, Hume, Cartesia, Twilio) encrypted using AES-256-GCM prior to storage in `connector_configs`.
-2. **Tenant Isolation:** Every database table strictly governed by Supabase Row-Level Security (RLS) policies enforcing `auth.uid() -> org_id` scoping.
-3. **DPDP "Forget Me" Cascade Engine:**  
-   Invoking `DELETE /api/contacts/{id}/memory` triggers an atomic transaction across all storage tiers:
-   - `DEL stm:contact_{id}:*` in Upstash Redis.
-   - `DELETE FROM memory_long_term WHERE contact_id = id` in pgvector.
-   - `DELETE FROM memory_episodic WHERE contact_id = id` in Postgres.
-   - `MATCH (c:Contact {id: id}) DETACH DELETE c` in FalkorDB.
+| Table Name | Description | Key Indexes |
+| :--- | :--- | :--- |
+| `organizations` | Tenant isolation accounts | `id (PK)` |
+| `users` | Org members and role permissions | `id (PK), org_id (FK), email` |
+| `agents` | Agent prompt, voice, and telephony configuration | `id (PK), org_id (FK)` |
+| `contacts` | End-user caller records | `id (PK), org_id (FK), phone` |
+| `calls` | Detailed call session metadata and metrics | `id (PK), org_id (FK), agent_id (FK), contact_id (FK)` |
+| `call_transcripts` | Turn-by-turn spoken conversation logs | `id (PK), call_id (FK), turn_index` |
+| `emotion_events` | Granular valence/arousal/frustration logs | `id (PK), call_id (FK), timestamp` |
+| `intent_events` | Detected intents and slot key-values | `id (PK), call_id (FK)` |
+| `memory_long_term` | Semantic fact vector embeddings | `id (PK), contact_id (FK), HNSW (embedding)` |
+| `memory_episodic` | Chronological past call episode summaries | `id (PK), contact_id (FK), call_id (FK)` |
+| `phone_numbers` | Provisioned Twilio / Exotel / Plivo numbers | `id (PK), org_id (FK), phone_number` |
+| `connector_configs` | Encrypted third-party action configurations | `id (PK), org_id (FK), type` |
+| `connector_logs` | Audit trail of connector executions | `id (PK), call_id (FK), connector_id (FK)` |
+| `api_keys` | Organization developer API access tokens | `id (PK), org_id (FK), key_hash` |
+| `compliance_logs` | DPDP / TRAI privacy and consent audit logs | `id (PK), org_id (FK), contact_id (FK)` |
 
 ---
-*Approved by VoCall Core Engineering Team*
+
+Approved by VoCall Technical Architecture Team.

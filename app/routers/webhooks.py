@@ -17,6 +17,7 @@ from fastapi import APIRouter, Request, Response, HTTPException, status, Form
 from twilio.request_validator import RequestValidator
 
 from app.core.config import settings
+from app.core.tokens import generate_call_stream_token
 from app.services.supabase_client import supabase
 from app.services.livekit_service import livekit_service
 from app.trigger.post_call_pipeline import post_call_pipeline, trigger
@@ -183,7 +184,8 @@ async def twilio_inbound(request: Request):
     # 6. Build TwiML response — stream audio to VoCall WebSocket bridge
     # The WS URL will be routed to voice_pipeline.py start_pipeline()
     backend_host = settings.BACKEND_PUBLIC_URL or "wss://your-backend.railway.app"
-    ws_url = f"{backend_host}/api/v1/calls/stream/{call_id or call_sid}"
+    stream_token, stream_exp = generate_call_stream_token(str(call_id or call_sid))
+    ws_url = f"{backend_host}/api/v1/calls/stream/{call_id or call_sid}?token={stream_token}&exp={stream_exp}"
 
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>

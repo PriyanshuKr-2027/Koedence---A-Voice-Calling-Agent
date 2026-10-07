@@ -1,0 +1,246 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue,
+    citecolor=black
+}
+
+\setlist[enumerate]{leftmargin=*, topsep=3pt, itemsep=2pt}
+\setlist[itemize]{leftmargin=*, topsep=3pt, itemsep=2pt}
+
+\title{\textbf{VoCall: Slide-by-Slide Speaker Notes \& Delivery Script}\\
+\large 3-Presenter Delivery Guide: Priyanshu, Abhishek, Ananya}
+\author{\textbf{Supervised by:} Dr. Shivkant (Assistant Professor)\\[1ex]
+\textbf{Team:} Priyanshu, Abhishek, Ananya, Adarsh}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\hrule
+\vspace{1em}
+
+\section*{Speaking Allocation \& Timing Summary}
+\begin{itemize}
+    \item \textbf{Total Estimated Duration:} $\approx 10$ minutes ($ seconds).
+    \item \textbf{Priyanshu (Opening, Problem, Architecture, Memory):} Slides 1, 4, 8, 10 (Part A). Total time: $\approx 3.75$ minutes.
+    \item \textbf{Abhishek (Literature Review, Objectives, Emotion/VA-ICECoT, Evaluation):} Slides 5, 6, 10 (Part B), 11. Total time: $\approx 3.5$ minutes.
+    \item \textbf{Ananya (Proposed System, Tech Stack, Conclusion, References):} Slides 7, 9, 2, 3. Total time: $\approx 2.75$ minutes.
+    \item \textbf{Adarsh's Engineering Credit:} Frontend UI, Agent Studio, and WebCall WebRTC browser environment (presented during viva defense).
+\end{itemize}
+
+\vspace{1em}
+\hrule
+\vspace{1.5em}
+
+\section*{Slide 1 (PPTX Slide 1): Title Slide}
+\textbf{Presenter:} Priyanshu \hfill \textbf{Target Duration:} 45 seconds
+
+\paragraph{Spoken Script:}
+`Good morning, respected supervisor Dr. Shivkant sir and honorable members of the panel. Today, our team is presenting our final project: \textbf{VoCall — The Memory-Augmented Voice Calling Agent with Emotional Awareness}.
+
+My name is Priyanshu, and presenting with me today are Abhishek and Ananya. Our fourth teammate, Adarsh, built the frontend engineering and browser testing studio for our platform.
+
+VoCall addresses the trade-off between conversational speed and deep contextual understanding in voice agents. We solve this by combining a four-tier persistent memory, dual-signal emotion fusion, and a structured intent engine into a streaming voice pipeline. Abhishek will now walk you through the real-world problem and literature that motivated this system.''
+
+\noindent\textbf{Verbal Handoff:} \textit{`Over to you, Abhishek, for the problem statement and literature review.''}
+
+\vspace{1.5em}
+
+\section*{Slide 2 (PPTX Slide 4): Introduction — Problem Statement \& Motivation}
+\textbf{Presenter:} Priyanshu \hfill \textbf{Target Duration:} 60 seconds
+
+\paragraph{Spoken Script:}
+`When we examine voice agents deployed in production today, we see a recurring compromise: systems either pick fast, shallow conversations, or slower, detached retrieval that breaks human speech cadence.
+
+Specifically, existing voice platforms suffer from three severe bottlenecks:
+\begin{enumerate}
+    \item \textbf{Contextual Amnesia:} When a user calls support on Monday and calls back on Thursday, the agent has zero recollection of their previous conversation, open tickets, or preferences.
+    \item \textbf{Emotional Blindness:} Current agents parse words, but miss distress, urgency, or frustration carried in vocal pitch and cadence.
+    \item \textbf{Brittle Dialogue Flow:} Basic intent classifiers either hallucinate or fail when conversational context shifts during task execution.
+\end{enumerate}
+VoCall's goal is to build a production voice platform where persistent caller memory, acoustic-textual emotion intelligence, and deterministic intent execution run inside a sub-500-millisecond voice loop.''
+
+\noindent\textbf{Verbal Handoff:} \textit{`Let's examine how academic literature approaches these constraints. Abhishek will present the literature review.''}
+
+\newpage
+
+\section*{Slide 3 (PPTX Slide 5): Literature Review — Existing Approaches}
+\textbf{Presenter:} Abhishek \hfill \textbf{Target Duration:} 60 seconds
+
+\paragraph{Spoken Script:}
+`Thank you, Priyanshu. In our survey of conversational systems, dialogue systems generally fall into two categories, both with clear bottlenecks:
+
+Traditional rule-based IVRs provide deterministic task routing, but are rigid and fail completely on natural phrasing. Modern LLM voice wrappers offer fluid conversational ability, but treat each call as an isolated session.
+
+As highlighted on the slide, the research gaps are clear:
+\begin{itemize}
+    \item \textbf{Contextual Amnesia:} Once a call disconnects, state vanishes.
+    \item \textbf{Limited Emotional Awareness:} Recent papers like Zhang et al. (ACL 2025) and Huang et al. (ACL 2026) emphasize joint emotion-intent understanding, but practical voice implementations rarely fuse prosodic audio cues with textual sentiment.
+    \item \textbf{Code-Switching Difficulty:} Most commercial engines degrade rapidly on Hindi-English (Hinglish) code-switching common across Indian speakers.
+    \item \textbf{Latency Constraints:} Multi-agent frameworks often introduce 2 to 3 seconds of delay, completely destroying conversational turn-taking.
+\end{itemize}
+These findings established the technical foundation of what VoCall addresses.''
+
+\noindent\textbf{Key References to Mention:} Zhang et al. (ACL 2025 \textit{IntentionESC}), Huang et al. (ACL 2026 \textit{JX4MEI}).
+
+\vspace{1.5em}
+
+\section*{Slide 4 (PPTX Slide 6): Research Objectives}
+\textbf{Presenter:} Abhishek \hfill \textbf{Target Duration:} 45 seconds
+
+\paragraph{Spoken Script:}
+`To directly address these gaps, our project established seven concrete research objectives:
+\begin{enumerate}
+    \item \textbf{Layered Architecture:} Separate client, API, persistent storage, real-time voice streaming, and asynchronous background jobs.
+    \item \textbf{Four-Tier Hybrid Memory:} Build and benchmark short-term call state, semantic long-term memory, episodic summaries, and graph relationships.
+    \item \textbf{Dual-Signal Emotion Fusion:} Combine acoustic prosody from raw audio with textual sentiment from transcripts.
+    \item \textbf{VA-ICECoT Engine:} Implement Voice-Adapted Intent, Slot \& Emotion Chain-of-Thought for deterministic action dispatch.
+    \item \textbf{Hinglish Support:} Integrate language-aware STT and TTS routing for Hindi-English code-switched dialogues.
+    \item \textbf{Browser-Based WebCall Studio:} Enable zero-telephony testing directly from the browser using WebRTC.
+    \item \textbf{Unified Agent Studio:} Allow developers to configure prompts, memory scopes, tools, and voice properties in one interface.
+\end{enumerate}
+Ananya will now present our proposed system architecture and contributions.''
+
+\noindent\textbf{Verbal Handoff:} \textit{`Ananya will now present how VoCall translates these objectives into a functioning platform.''}
+
+\newpage
+
+\section*{Slide 5 (PPTX Slide 7): Proposed System — VoCall Contributions}
+\textbf{Presenter:} Ananya \hfill \textbf{Target Duration:} 60 seconds
+
+\paragraph{Spoken Script:}
+`Thank you, Abhishek. On this slide, you see how each identified challenge maps directly to an engineering module in VoCall:
+\begin{itemize}
+    \item Where standard voice bots suffer from context loss, VoCall introduces our \textbf{Four-Tier Hybrid Memory}, balancing in-memory speed with relational knowledge.
+    \item Where existing systems miss emotional shifts, our \textbf{Dual-Signal Fusion Engine} tracks caller sentiment turn-by-turn.
+    \item Where standard LLM bots hallucinate during tool execution, our \textbf{VA-ICECoT Engine} validates required slots and executes business connectors deterministically.
+    \item For Indian language code-switching, we use \textbf{language-aware STT and TTS routing}, utilizing Sarvam AI alongside Whisper and Cartesia.
+    \item And to remove the bottleneck of costly SIP trunks and telephony carriers during development, Adarsh built our \textbf{Web Call testing studio} using direct LiveKit WebRTC audio.
+\end{itemize}
+Priyanshu will now walk you through the layered system architecture that connects these components.''
+
+\noindent\textbf{Verbal Handoff:} \textit{`Priyanshu will now detail the system architecture.''}
+
+\vspace{1.5em}
+
+\section*{Slide 6 (PPTX Slide 8): System Architecture — Modular Platform Design}
+\textbf{Presenter:} Priyanshu \hfill \textbf{Target Duration:} 75 seconds
+
+\paragraph{Spoken Script:}
+`Our system architecture is structured into clean functional layers to ensure hard real-time guarantees:
+
+At the top, the \textbf{Client Layer} consists of the Next.js and React dashboard, where operators configure agents and test audio via WebRTC.
+
+The \textbf{API Layer} is built on FastAPI. It handles authentication, caller profile management, contact records, and webhook routing.
+
+Below this is the \textbf{Intelligence Layer}, housing our four-tier memory retriever, the dual-signal emotion fusion engine, and the VA-ICECoT intent loop.
+
+The core of the platform is the \textbf{Real-Time Voice Pipeline}, orchestrated using Pipecat and LiveKit. Audio chunks stream bidirectionally over WebRTC. Interruption handling (VAD) runs directly on the audio stream.
+
+A crucial architectural decision is the \textbf{Async Post-Call Processing layer via Trigger.dev}. Heavy operations—like calculating conversation metrics, generating episodic summaries, and extracting knowledge graph entities—are completely decoupled from the live call. The voice pipeline never waits on database writes or heavy background consolidation.''
+
+\noindent\textbf{Core Takeaway:} The time-sensitive voice path ($<500$\,ms) is decoupled from post-call processing (async workers).
+
+\newpage
+
+\section*{Slide 7 (PPTX Slide 9): Technology Stack}
+\textbf{Presenter:} Ananya \hfill \textbf{Target Duration:} 60 seconds
+
+\paragraph{Spoken Script:}
+`Our technology stack was selected to satisfy stringent latency and stability requirements:
+\begin{itemize}
+    \item \textbf{Frontend \& Client:} Next.js, React, TypeScript, and Tailwind CSS, providing real-time telemetry and call monitoring.
+    \item \textbf{Backend:} Python and FastAPI for asynchronous I/O and clean OpenAPI service boundaries.
+    \item \textbf{Voice Orchestration:} Pipecat for frame-based audio pipeline construction, coupled with LiveKit for production WebRTC media transport.
+    \item \textbf{AI \& Speech Providers:} Groq running LLaMA 3.3 for ultra-low first-token latency; Whisper and Sarvam AI for multilingual STT; Cartesia and Sarvam AI for streaming TTS synthesis; and Hume AI for voice prosody analysis.
+    \item \textbf{Storage Architecture:} Supabase PostgreSQL for relational data; pgvector for semantic fact search; Upstash Redis for sub-5ms active call state; and FalkorDB for low-latency graph traversals.
+    \item \textbf{Job Orchestration:} Trigger.dev for resilient asynchronous background tasks.
+\end{itemize}
+Now, Priyanshu and Abhishek will present our core innovations: the memory architecture, emotion fusion, and VA-ICECoT.''
+
+\noindent\textbf{Verbal Handoff:} \textit{`Priyanshu will now break down our Four-Tier Memory Architecture.''}
+
+\vspace{1.5em}
+
+\section*{Slide 8 (PPTX Slide 10): Core Innovation — Memory, Emotion \& VA-ICECoT}
+\textbf{Presenters:} Priyanshu (Part A) + Abhishek (Part B) \hfill \textbf{Target Duration:} 90 seconds
+
+\paragraph{Part A: Four-Tier Hybrid Memory (Priyanshu — 45s):}
+`The first core innovation is our \textbf{Four-Tier Hybrid Memory Architecture}:
+\begin{enumerate}
+    \item \textbf{Short-Term Memory (Upstash Redis):} Holds active call context, recent turns, and currently collected slots in single-digit milliseconds.
+    \item \textbf{Long-Term Semantic Memory (PostgreSQL + pgvector):} Stores caller facts, profile attributes, and semantic embeddings retrieved using cosine distance over previous conversations.
+    \item \textbf{Episodic Memory (PostgreSQL):} Preserves structured summaries of past calls—what was discussed, what issue was resolved, and the customer's sentiment.
+    \item \textbf{Knowledge Graph (FalkorDB):} Maps relationships between entities—such as caller to company, caller to pending tickets, or products discussed.
+\end{enumerate}
+In our code (\texttt{app/services/memory/retriever.py}), we query these tiers concurrently using \texttt{asyncio.gather}, bounding total retrieval latency to under 45 milliseconds before prompting the LLM.''
+
+\paragraph{Part B: Dual-Signal Emotion Fusion \& VA-ICECoT (Abhishek — 45s):}
+`Alongside memory, we implement \textbf{Dual-Signal Emotion Fusion}:
+Human emotion lives both in \textit{what} is said and \textit{how} it is said. We extract acoustic prosody from raw audio via Hume AI, and combine it with textual sentiment extracted via Groq. Our fusion algorithm weights acoustic signal at 60\% and text at 40\%, because acoustic prosody reliably betrays frustration before words do.
+
+This fused state feeds directly into \textbf{VA-ICECoT}—our Voice-Adapted Intent, Slot \& Emotion Chain-of-Thought engine. Instead of handing full control to an unconstrained LLM, VA-ICECoT identifies the intent, tracks required slots, evaluates deterministic combined rules, and triggers business connectors—such as booking a Google Calendar event or updating HubSpot CRM.
+
+I will now present our evaluation framework and target metrics.''
+
+\newpage
+
+\section*{Slide 9 (PPTX Slide 11): Evaluation — Proposed Metrics}
+\textbf{Presenter:} Abhishek \hfill \textbf{Target Duration:} 60 seconds
+
+\paragraph{Spoken Script:}
+`To evaluate VoCall rigorously, we established six empirical metrics:
+\begin{enumerate}
+    \item \textbf{End-to-End Latency:} Target is under 500 milliseconds from the moment the user stops speaking to the first audio packet returned.
+    \item \textbf{Voice First-Byte Latency:} TTS streaming synthesis target is under 100 milliseconds using Cartesia's WebSocket protocol.
+    \item \textbf{Emotion Fusion Accuracy:} Target is greater than 90\% correlation against human-annotated sentiment benchmarks.
+    \item \textbf{Intent Accuracy:} Target is greater than 95\% classification accuracy across labelled task scenarios.
+    \item \textbf{Memory Retrieval Precision:} Target is greater than 92\% precision for relevant semantic and graph facts injected into prompt context.
+    \item \textbf{Task Completion Rate:} Target is greater than 85\% for end-to-end simulated calls involving slot filling and connector execution.
+\end{enumerate}
+We want to be explicit: the architecture, memory tiers, fusion rules, and voice pipelines are implemented. Formal large-scale statistical validation across diverse benchmark datasets is scheduled for our final project phase.
+
+Ananya will conclude our presentation with our summary and future roadmap.''
+
+\noindent\textbf{Verbal Handoff:} \textit{`Ananya will now present our conclusion and future roadmap.''}
+
+\vspace{1.5em}
+
+\section*{Slide 10 (PPTX Slide 2): Conclusion \& Future Work}
+\textbf{Presenter:} Ananya \hfill \textbf{Target Duration:} 60 seconds
+
+\paragraph{Spoken Script:}
+`To conclude, VoCall demonstrates a practical, production-oriented approach to intelligent voice systems:
+\begin{itemize}
+    \item We unified four memory tiers to eliminate contextual amnesia between calls.
+    \item We fused acoustic prosody with textual sentiment to give agents genuine emotional context.
+    \item We built the VA-ICECoT framework to bridge emotion, intent, slot validation, and business action execution.
+    \item And we decoupled real-time voice streaming from heavy asynchronous database indexing.
+\end{itemize}
+\textbf{Future Scope:} In upcoming phases, we plan to expand native support for additional regional Indian languages, calibrate acoustic emotion models specifically for Indian accents, implement stronger cross-session memory consolidation algorithms, and perform large-scale empirical stress testing against our proposed latency and accuracy targets.
+
+Thank you Dr. Shivkant sir and esteemed panel members. Abhishek, Priyanshu, and I are now ready to take your questions.''
+
+\vspace{1.5em}
+
+\section*{Slide 11 (PPTX Slide 3): References}
+\textbf{Presenter:} Ananya \hfill \textbf{Target Duration:} 15 seconds
+
+\paragraph{Spoken Script:}
+`These are the key research papers and internal engineering specifications guiding our work, including recent publications from ACL 2025 and ACL 2026 on intention-centered emotional dialogue and multimodal joint understanding. Thank you.''
+
+\vspace{2em}
+\begin{center}
+    \textbf{--- End of Presentation Script ---}
+\end{center}
+
+\end{document}

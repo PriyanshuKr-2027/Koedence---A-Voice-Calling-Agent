@@ -1,0 +1,17 @@
+{
+  "trials": 50,
+  "seed": 0,
+  "mean_e2e_ms": 617.64,
+  "ci_e2e_ms": [
+    605.81,
+    630.17
+  ],
+  "p50_e2e_ms": 611.32,
+  "p90_e2e_ms": 680.9,
+  "p99_e2e_ms": 710.88,
+  "breakdown_mean_ms": {
+    "stt": 205.04,
+    "llm_generation": 293.13,
+    "tts_ttfb": 119.47
+  }
+}

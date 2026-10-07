@@ -6,6 +6,7 @@ Post-call analysis, Connectors, Email notification, and Database/Redis cleanup).
 """
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 from typing import Any, Dict, List, Optional
@@ -240,6 +241,17 @@ async def run_analysis(
 # Post-Call Pipeline Task
 # ---------------------------------------------------------------------------
 
+async def _is_contact_erased(contact_id: Optional[str]) -> bool:
+    """Checks whether the contact has an active erasure flag in Redis."""
+    if not contact_id:
+        return False
+    try:
+        from app.services.redis_client import redis_client
+        return bool(await redis_client.get(f"erasure:{contact_id}"))
+    except Exception:
+        return False
+
+
 @task(id="post-call-pipeline", maxDuration=300, retry={"max": 3})
 async def post_call_pipeline(
     call_id: str,
@@ -248,111 +260,195 @@ async def post_call_pipeline(
     org_id: str = "",
 ) -> Dict[str, Any]:
     """
-    Full Post-Call Processing Pipeline task executing Steps 1 through 11.
+    Full Post-Call Processing Pipeline task executing Steps 1 through 11 idempotently.
+    Guarded by calls.post_steps markers, Redis erasure flags, and deduplication.
     """
     logger.info(
         "Starting post_call_pipeline for call_id=%s, agent_id=%s, contact_id=%s, org_id=%s",
         call_id, agent_id, contact_id, org_id
     )
 
-    # Step 1 — Fetch raw data from short-term memory
+    if contact_id and await _is_contact_erased(contact_id):
+        logger.info(
+            "Contact %s has active erasure flag; skipping memory writes in post_call_pipeline for call %s",
+            contact_id,
+            call_id,
+        )
+        return {
+            "status": "skipped",
+            "reason": f"Contact {contact_id} marked for erasure",
+            "call_id": call_id,
+        }
+
+    # Fetch existing call row and post_steps if available
+    call_row: Dict[str, Any] = {}
+    post_steps: Dict[str, Any] = {}
+    if supabase:
+        try:
+            res = supabase.table("calls").select("*").eq("id", call_id).limit(1).execute()
+            if res.data:
+                call_row = res.data[0]
+                raw_steps = call_row.get("post_steps") or {}
+                if isinstance(raw_steps, dict):
+                    post_steps = dict(raw_steps)
+        except Exception as exc:
+            logger.warning("Could not fetch call record for %s: %s", call_id, exc)
+
+    async def record_step(step_name: str) -> None:
+        post_steps[step_name] = datetime.now(timezone.utc).isoformat()
+        if supabase:
+            try:
+                supabase.table("calls").update({"post_steps": post_steps}).eq("id", call_id).execute()
+            except Exception as exc:
+                logger.warning("Failed updating post_steps for call %s step %s: %s", call_id, step_name, exc)
+
+    # Step 1 — Fetch raw data from short-term memory (or fallback to calls table)
     data = await short_term.get_call_memory(call_id) or {}
     transcript = data.get("turns", [])
     emotion_events = data.get("emotion_events", [])
-    logger.info("Step 1 — Fetched raw data: %d turns, %d emotion events", len(transcript), len(emotion_events))
+    if not transcript and call_row.get("transcript"):
+        transcript = call_row.get("transcript")
+    logger.info("Step 1 — Fetched raw data: %s turns, %s emotion events", len(transcript) if isinstance(transcript, list) else 1, len(emotion_events))
 
-    # Step 2 — Generate episodic summary
-    raw_episode = await episodic.create_episode(
-        call_id=call_id,
-        contact_id=contact_id,
-        org_id=org_id,
-        transcript=transcript,
-        emotion_events=emotion_events,
-    )
-    episode = EpisodeObj(raw_episode)
-    logger.info("Step 2 — Generated episodic summary, episode_id=%s", episode.id)
+    # Step 2 — Generate episodic summary (idempotent / guarded)
+    episode: Optional[EpisodeObj] = None
+    if post_steps.get("episodic"):
+        logger.info("Step 2 — Episodic memory already completed for call_id=%s; loading existing", call_id)
+        if supabase:
+            try:
+                ep_res = supabase.table("memory_episodic").select("*").eq("call_id", call_id).limit(1).execute()
+                if ep_res.data:
+                    episode = EpisodeObj(ep_res.data[0])
+            except Exception as exc:
+                logger.warning("Failed loading existing episodic record for call %s: %s", call_id, exc)
+    if episode is None:
+        if await _is_contact_erased(contact_id):
+            logger.info("Step 2 — Contact %s marked for erasure; skipping episodic write", contact_id)
+            episode = EpisodeObj({})
+        else:
+            raw_episode = await episodic.create_episode(
+                call_id=call_id,
+                contact_id=contact_id,
+                org_id=org_id,
+                transcript=transcript,
+                emotion_events=emotion_events,
+            )
+            episode = EpisodeObj(raw_episode)
+            if raw_episode:
+                await record_step("episodic")
+            logger.info("Step 2 — Generated episodic summary, episode_id=%s", episode.id)
 
     # Step 3 — Extract entities + topics
     entities, frustration_topics = await extract_entities_and_topics(transcript)
     logger.info("Step 3 — Extracted %d entities and %d frustration topics", len(entities), len(frustration_topics))
 
-    # Step 4 — Store long-term facts
+    # Step 4 — Store long-term facts (idempotent / guarded)
     avg_emotion = compute_avg_emotion(emotion_events)
-    if contact_id and episode.key_facts:
-        for fact in episode.key_facts:
-            if isinstance(fact, str) and fact.strip():
-                await long_term.store_fact(
-                    contact_id=contact_id,
-                    org_id=org_id,
-                    agent_id=agent_id,
-                    content=fact.strip(),
-                    emotion_state=avg_emotion,
-                )
-    logger.info("Step 4 — Stored long-term facts (avg_emotion=%s)", avg_emotion)
+    if post_steps.get("long_term"):
+        logger.info("Step 4 — Long-term facts already stored for call_id=%s; skipping", call_id)
+    else:
+        if contact_id and episode.key_facts and not await _is_contact_erased(contact_id):
+            for fact in episode.key_facts:
+                if isinstance(fact, str) and fact.strip():
+                    await long_term.store_fact(
+                        contact_id=contact_id,
+                        org_id=org_id,
+                        agent_id=agent_id,
+                        content=fact.strip(),
+                        emotion_state=avg_emotion,
+                        call_id=call_id,
+                    )
+        await record_step("long_term")
+        logger.info("Step 4 — Stored long-term facts (avg_emotion=%s)", avg_emotion)
 
     # Step 5 — Episodic row confirmed
-    logger.info("Step 5 — Episodic row confirmed written in Step 2 (episode_id=%s)", episode.id)
+    logger.info("Step 5 — Episodic row confirmed (episode_id=%s)", episode.id)
 
-    # Step 6 — Update FalkorDB graph
-    if contact_id and episode.id:
-        graph.add_entities(
-            contact_id=contact_id,
-            entities=entities,
-            episode_id=episode.id,
-            call_id=call_id,
-            summary=episode.summary,
-        )
-        if frustration_topics:
-            graph.add_frustration_edges(
+    # Step 6 — Update FalkorDB graph (idempotent / guarded)
+    if post_steps.get("graph"):
+        logger.info("Step 6 — FalkorDB graph already updated for call_id=%s; skipping", call_id)
+    else:
+        if contact_id and episode.id and not await _is_contact_erased(contact_id):
+            graph.add_entities(
                 contact_id=contact_id,
-                topics=frustration_topics,
+                entities=entities,
                 episode_id=episode.id,
-                emotion_state=avg_emotion,
+                call_id=call_id,
+                summary=episode.summary,
             )
-        prev_ep_id = await episodic.get_previous_episode_id(contact_id, org_id)
-        if prev_ep_id:
-            graph.link_episodes(contact_id, prev_ep_id, episode.id)
-    logger.info("Step 6 — FalkorDB graph updated successfully")
+            if frustration_topics:
+                graph.add_frustration_edges(
+                    contact_id=contact_id,
+                    topics=frustration_topics,
+                    episode_id=episode.id,
+                    emotion_state=avg_emotion,
+                    call_id=call_id,
+                )
+            prev_ep_id = await episodic.get_previous_episode_id(contact_id, org_id)
+            if prev_ep_id:
+                graph.link_episodes(contact_id, prev_ep_id, episode.id)
+        await record_step("graph")
+        logger.info("Step 6 — FalkorDB graph updated successfully")
 
-    # Step 7 — Run analysis
-    agent = await get_agent(agent_id)
-    contact = await get_contact(contact_id)
-    agent_config = agent.get("config", {}) if isinstance(agent, dict) else {}
-    analysis_config = agent_config.get("analysis", {})
-    analysis = await run_analysis(transcript, emotion_events, analysis_config)
-    logger.info("Step 7 — Post-call analysis complete (summary length=%d)", len(analysis.get("summary", "")))
+    # Step 7 — Run analysis (idempotent / guarded)
+    analysis = None
+    if post_steps.get("analysis") and call_row.get("analysis"):
+        logger.info("Step 7 — Post-call analysis already completed for call_id=%s; reusing", call_id)
+        analysis = call_row.get("analysis")
+    if not analysis:
+        agent = await get_agent(agent_id)
+        contact = await get_contact(contact_id)
+        agent_config = agent.get("config", {}) if isinstance(agent, dict) else {}
+        analysis_config = agent_config.get("analysis", {})
+        analysis = await run_analysis(transcript, emotion_events, analysis_config)
+        await record_step("analysis")
+        logger.info("Step 7 — Post-call analysis complete (summary length=%d)", len(analysis.get("summary", "")))
 
-    # Step 8 — Fire post-call connectors in parallel
-    contact_phone = contact.get("phone") or contact.get("number") or "+1234567890"
-    contact_name = contact.get("name") or "Customer"
-    agent_name = agent.get("name") or "AI Agent"
-    duration_seconds = len(transcript) * 10  # approximate if not specified
+    # Step 8 — Fire post-call connectors in parallel (idempotent / guarded)
+    connector_results = []
+    if post_steps.get("connectors"):
+        logger.info("Step 8 — Post-call connectors already fired for call_id=%s; skipping", call_id)
+    else:
+        agent = await get_agent(agent_id)
+        contact = await get_contact(contact_id)
+        contact_phone = contact.get("phone") or contact.get("number") or "+1234567890"
+        contact_name = contact.get("name") or "Customer"
+        agent_name = agent.get("name") or "AI Agent"
+        duration_seconds = len(transcript) * 10 if isinstance(transcript, list) else 60
 
-    call_data = {
-        "call_id": call_id,
-        "contact_phone": contact_phone,
-        "contact_name": contact_name,
-        "agent_name": agent_name,
-        "call_summary": analysis.get("summary", ""),
-        "emotion_score": avg_emotion.get("valence", 0.0),
-        "duration_seconds": duration_seconds,
-        "transcript": transcript,
-        "structured_data": analysis,
-        "success_eval": analysis.get("resolution_status", "completed"),
-    }
+        call_data = {
+            "call_id": call_id,
+            "contact_phone": contact_phone,
+            "contact_name": contact_name,
+            "agent_name": agent_name,
+            "call_summary": analysis.get("summary", ""),
+            "emotion_score": avg_emotion.get("valence", 0.0),
+            "duration_seconds": duration_seconds,
+            "transcript": transcript,
+            "structured_data": analysis,
+            "success_eval": analysis.get("resolution_status", "completed"),
+        }
 
-    connector_results = await fire_post_call_connectors(
-        org_id=org_id or agent.get("org_id", ""),
-        agent_id=agent_id,
-        call_data=call_data,
-    )
-    logger.info("Step 8 — Post-call connectors executed (%d results)", len(connector_results))
+        connector_results = await fire_post_call_connectors(
+            org_id=org_id or agent.get("org_id", ""),
+            agent_id=agent_id,
+            call_data=call_data,
+        )
+        await record_step("connectors")
+        logger.info("Step 8 — Post-call connectors executed (%d results)", len(connector_results))
 
-    # Step 9 — Send email
-    await email.send_post_call_email(agent, call_id, analysis)
-    logger.info("Step 9 — Post-call email notification sent")
+    # Step 9 — Send email (idempotent / guarded)
+    if post_steps.get("email"):
+        logger.info("Step 9 — Post-call email already sent for call_id=%s; skipping", call_id)
+    else:
+        agent = await get_agent(agent_id)
+        await email.send_post_call_email(agent, call_id, analysis)
+        await record_step("email")
+        logger.info("Step 9 — Post-call email notification sent")
 
     # Step 10 — Update calls row in Supabase
+    post_processed_at = datetime.now(timezone.utc).isoformat()
+    post_steps["completed"] = post_processed_at
     if supabase:
         try:
             update_payload = {
@@ -360,9 +456,11 @@ async def post_call_pipeline(
                 "analysis": analysis,
                 "transcript": format_transcript(transcript),
                 "status": "completed",
+                "post_processed_at": post_processed_at,
+                "post_steps": post_steps,
             }
             supabase.table("calls").update(update_payload).eq("id", call_id).execute()
-            logger.info("Step 10 — Updated calls row for call_id=%s with status='completed'", call_id)
+            logger.info("Step 10 — Updated calls row for call_id=%s with status='completed' and post_processed_at", call_id)
         except Exception as exc:
             logger.error("Failed to update calls row in Step 10: %s", exc)
 
@@ -377,4 +475,5 @@ async def post_call_pipeline(
         "emotion_score": avg_emotion.get("valence", 0.0),
         "analysis": analysis,
         "connector_results": connector_results,
+        "post_steps": post_steps,
     }

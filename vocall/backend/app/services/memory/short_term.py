@@ -156,15 +156,96 @@ async def get_call_memory(call_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+async def get_slots(call_id: str, intent_slug: str) -> Dict[str, Any]:
+    """
+    Retrieves slots dictionary for given call_id and intent_slug from Redis:
+      GET slot:{call_id}:{intent_slug}
+    Returns parsed dict or {} if missing or on error.
+    """
+    if not call_id or not intent_slug:
+        return {}
+    try:
+        key = f"slot:{call_id}:{intent_slug}"
+        raw_val = await redis_client.get(key)
+        if not raw_val:
+            return {}
+        if isinstance(raw_val, dict):
+            return raw_val
+        data = json.loads(raw_val)
+        if isinstance(data, dict):
+            return data
+        return {}
+    except Exception as exc:
+        logger.error("Failed to get_slots for call %s intent %s: %s", call_id, intent_slug, exc)
+        return {}
+
+
+async def write_slot(call_id: str, intent_slug: str, slots: Dict[str, Any]) -> None:
+    """
+    Persists slots dictionary for given call_id and intent_slug to Redis:
+      SET slot:{call_id}:{intent_slug} JSON.stringify(slots) EX 3600
+    """
+    if not call_id or not intent_slug:
+        return None
+    try:
+        key = f"slot:{call_id}:{intent_slug}"
+        payload = json.dumps(slots if isinstance(slots, dict) else {})
+        await redis_client.set(
+            key=key,
+            value=payload,
+            ex_seconds=DEFAULT_TTL_SECONDS,
+        )
+        logger.debug("Wrote slots for call %s intent %s", call_id, intent_slug)
+    except Exception as exc:
+        logger.error("Failed to write_slot for call %s intent %s: %s", call_id, intent_slug, exc)
+    return None
+
+
+async def clear_slots(call_id: str) -> int:
+    """
+    Deletes all slot:{call_id}:* keys from Redis.
+    Returns the count of deleted keys.
+    """
+    if not call_id:
+        return 0
+    try:
+        pattern = f"slot:{call_id}:*"
+        keys = await redis_client.keys(pattern)
+        deleted_count = 0
+        if keys:
+            for k in keys:
+                success = await redis_client.delete(k)
+                if success:
+                    deleted_count += 1
+        logger.debug("Cleared %d slot keys for call %s", deleted_count, call_id)
+        return deleted_count
+    except Exception as exc:
+        logger.error("Failed to clear_slots for call %s: %s", call_id, exc)
+        return 0
+
+
 async def clear_call_memory(call_id: str) -> bool:
     """
-    Deletes stm:{call_id} from Redis.
+    Deletes stm:{call_id}, all slot:{call_id}:* keys, and webcall:{call_id}:events from Redis.
     """
     try:
         key = f"{KEY_PREFIX}{call_id}"
         success = await redis_client.delete(key)
-        logger.debug("Cleared short-term memory for call %s", call_id)
+
+        # Clear all slot keys and webcall stream events
+        await clear_slots(call_id)
+        await redis_client.delete(f"webcall:{call_id}:events")
+
+        logger.debug("Cleared short-term memory, slots, and webcall events for call %s", call_id)
         return success
     except Exception as exc:
         logger.error("Failed to clear_call_memory for call %s: %s", call_id, exc)
         return False
+
+
+async def clear_call(call_id: str) -> bool:
+    """
+    Deletes stm:{call_id} from Redis. Convenience alias for clear_call_memory.
+    """
+    return await clear_call_memory(call_id)
+

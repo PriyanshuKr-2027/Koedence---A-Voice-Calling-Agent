@@ -1,0 +1,42 @@
+{
+  "claim_1_fusion": {
+    "claim": "Fused emotion recognition beats text-only and audio-only (CI excludes zero)",
+    "verdict": "NO LIVE DATA",
+    "evidence": {
+      "status": "No live emotion results found"
+    },
+    "recommendation": "Run emotion evaluation in live mode (EVAL_MODE=live) to produce live measurements."
+  },
+  "claim_2_graph": {
+    "claim": "Knowledge Graph tier (T4) improves recurring-complaint pattern accuracy",
+    "verdict": "NO LIVE DATA",
+    "evidence": {
+      "status": "No live memory ablation results found"
+    },
+    "recommendation": "Run memory ablation experiment in live mode (EVAL_MODE=live)."
+  },
+  "claim_3_wer": {
+    "claim": "Language-based routing reduces Hinglish Word Error Rate (WER)",
+    "verdict": "NO LIVE DATA",
+    "evidence": {
+      "status": "No live speech recognition results found"
+    },
+    "recommendation": "Run speech recognition WER evaluation in live mode (EVAL_MODE=live)."
+  },
+  "claim_4_latency": {
+    "claim": "Turn turnaround latency p95 is under 800 ms",
+    "verdict": "NO LIVE DATA",
+    "evidence": {
+      "status": "No live latency results found"
+    },
+    "recommendation": "Run latency replay experiment in live mode (EVAL_MODE=live)."
+  },
+  "claim_5_erasure": {
+    "claim": "Memory cascade erasure completeness C equals 1.0 (zero residue)",
+    "verdict": "NO LIVE DATA",
+    "evidence": {
+      "status": "No live erasure audit results found"
+    },
+    "recommendation": "Run erasure probe in live mode (EVAL_MODE=live)."
+  }
+}

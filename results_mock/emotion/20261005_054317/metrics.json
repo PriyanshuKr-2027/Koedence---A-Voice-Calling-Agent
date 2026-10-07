@@ -1,0 +1,18 @@
+{
+  "parameters": {
+    "fusion_w": 0.6,
+    "tone_threshold": 0.6,
+    "alert_threshold": 0.7,
+    "seed": 0
+  },
+  "samples_evaluated": 30,
+  "cohen_kappa_fused": 0.0,
+  "cohen_kappa_text_only": -0.0563,
+  "mcnemar_statistic": 0.0,
+  "mcnemar_p_value": 1.0,
+  "mean_fused_valence": -0.1237,
+  "ci_fused_valence": [
+    -0.2058,
+    -0.042
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "parameters": {
+    "fusion_w": 0.6,
+    "tone_threshold": 0.6,
+    "alert_threshold": 0.7,
+    "seed": 0
+  },
+  "total_clips": 25,
+  "text_only": {
+    "macro_f1": 0.8474,
+    "accuracy": 0.84,
+    "ci_accuracy": [
+      0.68,
+      0.96
+    ],
+    "valence_mae": 0.252,
+    "ci_valence_mae": [
+      0.11,
+      0.4361
+    ],
+    "pearson_r": 0.7209,
+    "latency_ms": 0.0
+  },
+  "audio_only": {
+    "macro_f1": 0.8474,
+    "accuracy": 0.84,
+    "ci_accuracy": [
+      0.68,
+      0.96
+    ],
+    "valence_mae": 0.2928,
+    "ci_valence_mae": [
+      0.1492,
+      0.4888
+    ],
+    "pearson_r": 0.7007,
+    "latency_ms": 0.01
+  },
+  "fused": {
+    "macro_f1": 0.8474,
+    "accuracy": 0.84,
+    "ci_accuracy": [
+      0.68,
+      0.96
+    ],
+    "valence_mae": 0.2765,
+    "ci_valence_mae": [
+      0.1345,
+      0.4707
+    ],
+    "pearson_r": 0.7097,
+    "latency_ms": 0.0
+  },
+  "tone_adapter_trigger": {
+    "precision": 0.5333,
+    "recall": 0.8889,
+    "f1": 0.6667,
+    "tp": 8,
+    "fp": 7,
+    "fn": 1
+  },
+  "frustration_alert_trigger": {
+    "precision": 0.7143,
+    "recall": 0.5556,
+    "f1": 0.625,
+    "tp": 5,
+    "fp": 2,
+    "fn": 4
+  },
+  "weight_sweep_file": "results\\emotion\\sweep.csv",
+  "disagreements_file": "results\\emotion\\disagreements.csv",
+  "table_vi_file": "results\\emotion\\table_vi.csv"
+}

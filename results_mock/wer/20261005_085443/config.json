@@ -1,0 +1,20 @@
+{
+  "experiment": "wer",
+  "timestamp": "20261005_085443",
+  "seed": 0,
+  "git_commit": "34175756cf365a1c8a31fb234283ba3b74ae2e53",
+  "python_version": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "package_versions": {
+    "fastapi": "0.111.1",
+    "pydantic": "2.11.7",
+    "pydantic_settings": "2.13.1",
+    "numpy": "1.26.4",
+    "scipy": "1.17.0",
+    "scikit-learn": "1.8.0",
+    "httpx": "0.28.1",
+    "pyyaml": "6.0.1",
+    "pytest": "9.1.1"
+  },
+  "model_names": {},
+  "config": {}
+}

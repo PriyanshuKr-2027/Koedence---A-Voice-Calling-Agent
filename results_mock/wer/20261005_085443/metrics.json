@@ -1,0 +1,306 @@
+{
+  "telephony_simulation": false,
+  "normalisation_mode": "raw",
+  "bootstrap_samples": 1000,
+  "seed": 0,
+  "total_utterances": 24,
+  "systems": {
+    "Whisper large-v3": {
+      "overall_wer": {
+        "mean": 0.0132,
+        "low": 0.0,
+        "high": 0.029
+      },
+      "overall_cer": {
+        "mean": 0.0055,
+        "low": 0.0,
+        "high": 0.0123
+      },
+      "latency_ms": {
+        "mean": 13.3063,
+        "low": 12.0754,
+        "high": 14.8304
+      },
+      "by_language": {
+        "hi": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "hinglish": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0396,
+            "low": 0.0078,
+            "high": 0.0791
+          },
+          "cer": {
+            "mean": 0.0166,
+            "low": 0.0033,
+            "high": 0.0336
+          }
+        },
+        "en": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        }
+      },
+      "by_length_bucket": {
+        "short": {
+          "count": 5,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "medium": {
+          "count": 17,
+          "wer": {
+            "mean": 0.0149,
+            "low": 0.0,
+            "high": 0.0383
+          },
+          "cer": {
+            "mean": 0.0056,
+            "low": 0.0,
+            "high": 0.0151
+          }
+        },
+        "long": {
+          "count": 2,
+          "wer": {
+            "mean": 0.0312,
+            "low": 0.0,
+            "high": 0.0625
+          },
+          "cer": {
+            "mean": 0.019,
+            "low": 0.0,
+            "high": 0.038
+          }
+        }
+      }
+    },
+    "Saarika": {
+      "overall_wer": {
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0
+      },
+      "overall_cer": {
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0
+      },
+      "latency_ms": {
+        "mean": 18.4296,
+        "low": 15.6557,
+        "high": 20.9468
+      },
+      "by_language": {
+        "hi": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "hinglish": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "en": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        }
+      },
+      "by_length_bucket": {
+        "short": {
+          "count": 5,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "medium": {
+          "count": 17,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "long": {
+          "count": 2,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        }
+      }
+    },
+    "Language-routed": {
+      "overall_wer": {
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0
+      },
+      "overall_cer": {
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0
+      },
+      "latency_ms": {
+        "mean": 19.1021,
+        "low": 16.5351,
+        "high": 21.7024
+      },
+      "by_language": {
+        "hi": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "hinglish": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "en": {
+          "count": 8,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        }
+      },
+      "by_length_bucket": {
+        "short": {
+          "count": 5,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "medium": {
+          "count": 17,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        },
+        "long": {
+          "count": 2,
+          "wer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          },
+          "cer": {
+            "mean": 0.0,
+            "low": 0.0,
+            "high": 0.0
+          }
+        }
+      }
+    }
+  }
+}

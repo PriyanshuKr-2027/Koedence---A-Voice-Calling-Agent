@@ -1,0 +1,67 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="760px" height="380px" viewBox="-0.5 -0.5 760 380">
+  <defs>
+    <filter id="shadow3" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arr3" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#334155"/>
+    </marker>
+    <marker id="arr-pink" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#be185d"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="760" height="380" fill="#ffffff" stroke="none"/>
+
+  <!-- Title -->
+  <rect x="20" y="15" width="720" height="35" rx="5" ry="5" fill="#0f172a"/>
+  <text x="380" y="38" fill="#f8fafc" font-family="Helvetica, Arial, sans-serif" font-size="13px" font-weight="bold" text-anchor="middle">Dual-Signal Emotion Fusion &amp; Adaptive Voice Modulation Pipeline</text>
+
+  <!-- Input Splitter -->
+  <rect x="20" y="70" width="130" height="80" rx="6" ry="6" fill="#f1f5f9" stroke="#475569" stroke-width="1.5" filter="url(#shadow3)"/>
+  <text x="85" y="100" fill="#0f172a" font-family="Helvetica, Arial, sans-serif" font-size="11px" font-weight="bold" text-anchor="middle">Input Utterance</text>
+  <text x="85" y="118" fill="#64748b" font-family="Helvetica, Arial, sans-serif" font-size="10px" text-anchor="middle">Dual Modality</text>
+  <text x="85" y="134" fill="#334155" font-family="Helvetica, Arial, sans-serif" font-size="9px" text-anchor="middle">Audio + Transcript</text>
+
+  <!-- Acoustic Branch (Top) -->
+  <path d="M 150 95 L 185 95" fill="none" stroke="#be185d" stroke-width="1.5" marker-end="url(#arr-pink)"/>
+  <rect x="190" y="65" width="165" height="70" rx="6" ry="6" fill="#fdf2f8" stroke="#db2777" stroke-width="1.5" filter="url(#shadow3)"/>
+  <text x="272" y="88" fill="#9d174d" font-family="Helvetica, Arial, sans-serif" font-size="11px" font-weight="bold" text-anchor="middle">Acoustic Prosody (Va)</text>
+  <text x="272" y="105" fill="#64748b" font-family="Helvetica, Arial, sans-serif" font-size="9.5px" text-anchor="middle">Hume EVI Prosody Vector</text>
+  <text x="272" y="121" fill="#be185d" font-family="Helvetica, Arial, sans-serif" font-size="9px" text-anchor="middle">Pitch, Energy, Spectral Tilt</text>
+
+  <!-- Text NLP Branch (Bottom) -->
+  <path d="M 150 125 L 170 125 L 170 195 L 185 195" fill="none" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arr3)"/>
+  <rect x="190" y="165" width="165" height="70" rx="6" ry="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" filter="url(#shadow3)"/>
+  <text x="272" y="188" fill="#1e40af" font-family="Helvetica, Arial, sans-serif" font-size="11px" font-weight="bold" text-anchor="middle">Lexical Sentiment (Vt)</text>
+  <text x="272" y="205" fill="#64748b" font-family="Helvetica, Arial, sans-serif" font-size="9.5px" text-anchor="middle">Groq NLP Sentiment Model</text>
+  <text x="272" y="221" fill="#2563eb" font-family="Helvetica, Arial, sans-serif" font-size="9px" text-anchor="middle">Discrete Valence &amp; Intent</text>
+
+  <!-- Convex Fusion Core (Center) -->
+  <path d="M 355 100 L 390 100 L 390 135 L 405 135" fill="none" stroke="#db2777" stroke-width="1.5" marker-end="url(#arr-pink)"/>
+  <path d="M 355 200 L 390 200 L 390 165 L 405 165" fill="none" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+  <rect x="410" y="110" width="160" height="85" rx="6" ry="6" fill="#faf5ff" stroke="#9333ea" stroke-width="1.5" filter="url(#shadow3)"/>
+  <text x="490" y="135" fill="#6b21a8" font-family="Helvetica, Arial, sans-serif" font-size="11px" font-weight="bold" text-anchor="middle">Convex Fusion Engine</text>
+  <text x="490" y="153" fill="#0f172a" font-family="Helvetica, Arial, sans-serif" font-size="10.5px" font-weight="bold" text-anchor="middle">V_fused = 0.6 Va + 0.4 Vt</text>
+  <text x="490" y="171" fill="#64748b" font-family="Helvetica, Arial, sans-serif" font-size="9px" text-anchor="middle">Calibrated Weighting</text>
+  <text x="490" y="184" fill="#9333ea" font-family="Helvetica, Arial, sans-serif" font-size="8.5px" text-anchor="middle">Latency Overhead &lt; 8ms</text>
+
+  <!-- Modulation Mapping Target -->
+  <path d="M 570 152 L 605 152" fill="none" stroke="#334155" stroke-width="1.5" marker-end="url(#arr3)"/>
+  <rect x="610" y="95" width="130" height="115" rx="6" ry="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5" filter="url(#shadow3)"/>
+  <text x="675" y="118" fill="#065f46" font-family="Helvetica, Arial, sans-serif" font-size="11px" font-weight="bold" text-anchor="middle">TTS Modulation</text>
+  <text x="675" y="137" fill="#047857" font-family="Helvetica, Arial, sans-serif" font-size="9.5px" text-anchor="middle">Rate: ρ = ρ0 + β·Vurg</text>
+  <text x="675" y="155" fill="#047857" font-family="Helvetica, Arial, sans-serif" font-size="9.5px" text-anchor="middle">Pitch: ω = ω0 + γ·Vcalm</text>
+  <text x="675" y="173" fill="#047857" font-family="Helvetica, Arial, sans-serif" font-size="9.5px" text-anchor="middle">Temp: τ in [0.4, 0.8]</text>
+  <text x="675" y="195" fill="#059669" font-family="Helvetica, Arial, sans-serif" font-size="8.5px" font-weight="bold" text-anchor="middle">Target: Cartesia TTS</text>
+
+  <!-- Bottom Evaluation Matrix Table -->
+  <rect x="20" y="260" width="720" height="100" rx="6" ry="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="35" y="280" fill="#334155" font-family="Helvetica, Arial, sans-serif" font-size="10.5px" font-weight="bold">Modality Resolution &amp; Escalation Strategy</text>
+  
+  <text x="35" y="302" fill="#0f172a" font-family="Helvetica, Arial, sans-serif" font-size="9.5px">• <tspan font-weight="bold">Acoustic Dominance (Va &gt; 0.70)</tspan>: Prioritizes vocal distress/anxiety over neutral literal text; raises agent empathy parameters.</text>
+  <text x="35" y="322" fill="#0f172a" font-family="Helvetica, Arial, sans-serif" font-size="9.5px">• <tspan font-weight="bold">Lexical Dominance (Vt &gt; 0.75)</tspan>: Handles explicit user cancellations or complaints with verified intent rules.</text>
+  <text x="35" y="342" fill="#0f172a" font-family="Helvetica, Arial, sans-serif" font-size="9.5px">• <tspan font-weight="bold">Emotion × Intent Escalation</tspan>: When fused frustration &gt; 0.65 and intent is high-stakes, bypasses mid-call tool to human operator.</text>
+</svg>

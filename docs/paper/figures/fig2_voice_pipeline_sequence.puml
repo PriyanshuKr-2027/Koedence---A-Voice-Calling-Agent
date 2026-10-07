@@ -1,0 +1,61 @@
+﻿@startuml fig2_voice_pipeline_sequence
+autonumber
+skinparam responseMessageBelowArrow true
+skinparam style strictuml
+skinparam SequenceGroupBodyBackgroundColor #F8FAFC
+skinparam ParticipantPadding 15
+skinparam BoxPadding 10
+
+box "Client & Network Edge" #E0F2FE
+actor "User" as U
+participant "LiveKit SFU\n(WebRTC Edge)" as SFU
+end box
+
+box "VoCall Core Orchestration" #F1F5F9
+participant "Silero VAD\n(Endpointing)" as VAD
+participant "FastAPI Orchestrator\n(Async Loop)" as ORCH
+end box
+
+box "Inference & Synthesis Engines" #FDF2F8
+participant "Groq LPU\n(Llama-3.3-70B)" as LLM
+participant "Cartesia Sonic-2\n(State-Space TTS)" as TTS
+end box
+
+== 1. Audio Ingestion & Boundary Endpointing ==
+U -> SFU: Continuous 48kHz Opus Audio Stream
+SFU -> VAD: Decoded 16kHz PCM Chunks (20ms frames)
+VAD -> VAD: Compute Speech Probability P(speech)
+note over VAD: Speech Boundary Verified\nSilence > 300ms (EOS)\nLatency: ~85ms
+VAD -> ORCH: Utterance Completed Event (Audio Segment)
+
+== 2. Speculative Inference & Memory Grounding ==
+ORCH -> LLM: Stream Token Prompt + In-Context Memory
+activate LLM
+note over LLM: Time-to-First-Token (TTFT)\n<= 165ms P95
+LLM -->> ORCH: Stream First Token Chunk ("Certainly, I can...")
+ORCH -> TTS: Stream Synthesized Text Chunks
+activate TTS
+note over TTS: Audio Chunk Synthesis\nLatency: ~78ms
+TTS -> SFU: Encoded Opus Frames (20ms RTP Packets)
+SFU -> U: Playback Voice Stream to User
+note over U,SFU: Total Mean Turnaround: 408ms P95
+
+== 3. Barge-In Interruption Lifecycle ==
+alt User Interrupts Mid-Playback (Barge-in)
+    U -> SFU: User Speaks ("Wait, stop that...")
+    SFU -> VAD: Ingest Mid-Speech Audio Frames
+    VAD -> VAD: Energy & RMS Exceeds Speech Threshold
+    VAD -> ORCH: Immediate Interruption Detected Event
+    
+    group Asynchronous Latency Mitigation (< 35ms)
+        ORCH -> SFU: Dispatch WebRTC Buffer Clear Command
+        SFU -> U: Immediate Playback Mute / Buffer Dropped
+        ORCH -> LLM: Cancel Active asyncio Generation Task
+        deactivate LLM
+        ORCH -> TTS: Terminate Streaming WebSocket Frame
+        deactivate TTS
+    end
+    
+    ORCH -> ORCH: Re-initialize Context for New Utterance
+end
+@enduml

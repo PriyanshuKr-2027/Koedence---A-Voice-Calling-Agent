@@ -1,0 +1,7 @@
+language,metric,stt_ms,cognitive_fanout_ms,llm_ttft_ms,tts_ttfab_ms,network_out_ms,overhead_gap_ms,total_turnaround_ms,pct_under_800ms
+English,p50,166.1,107.5,154.2,91.9,29.9,94.3,643.9,100.0
+English,p95,175.7,110.1,157.1,94.1,31.2,135.2,703.4,100.0
+Hinglish,p50,166.2,107.9,154.5,92.2,29.9,93.7,644.3,100.0
+Hinglish,p95,175.6,109.5,156.8,94.8,31.3,124.7,692.7,100.0
+Overall,p50,166.2,107.6,154.3,92.1,29.9,93.8,643.9,100.0
+Overall,p95,175.6,109.7,157.0,94.6,31.3,132.0,700.2,100.0

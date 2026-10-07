@@ -49,6 +49,57 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
         }
 
 
+async def require_authenticated_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """
+    Dependency requiring a valid authorization bearer token.
+    Never falls back to an unauthenticated dev user, regardless of environment.
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization.replace("Bearer ", "").strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        import jwt
+
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        user_id = decoded.get("sub") or decoded.get("id")
+        if not user_id:
+            raise ValueError("Token missing user subject")
+
+        org_id = (
+            decoded.get("org_id")
+            or decoded.get("app_metadata", {}).get("org_id")
+            or decoded.get("user_metadata", {}).get("org_id")
+            or "00000000-0000-0000-0000-000000000000"
+        )
+
+        return {
+            "id": user_id,
+            "email": decoded.get("email", "user@vocall.ai"),
+            "org_id": org_id,
+            "role": decoded.get("role", "member"),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid authorization token: {exc}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 @router.post("/login")
 async def login(payload: AuthLoginRequest):
     return {

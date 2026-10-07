@@ -1,0 +1,25 @@
+utt_id,path,text,language
+hi_001,audio/hi_001.wav,हाँ ठीक है।,hi
+hi_002,audio/hi_002.wav,कल सुबह 10 बजे कॉल शेड्यूल करदो।,hi
+hi_003,audio/hi_003.wav,कृपया मेरा नया खाता विवरण चेक करके मुझे तुरंत कन्फर्म कर दीजिए।,hi
+hi_004,audio/hi_004.wav,मुझे अपने पुराने लोन अकाउंट का स्टेटस चेक करना है और स्टेटमेंट चाहिए।,hi
+hi_005,audio/hi_005.wav,हमारे इंटरनेट कनेक्शन में बार बार रुकावट आ रही है और स्पीड बहुत कम मिल रही है।,hi
+hi_006,audio/hi_006.wav,नमस्ते आपका स्वागत है।,hi
+hi_007,audio/hi_007.wav,टिकट नंबर दर्ज हो गया है।,hi
+hi_008,audio/hi_008.wav,क्या आप मेरी समस्या का समाधान कर सकते हैं कृपया सहायता करें?,hi
+hing_001,audio/hing_001.wav,Mera refund status check kardo please.,hinglish
+hing_002,audio/hing_002.wav,Haan kal subah dus baje call schedule kar do.,hinglish
+hing_003,audio/hing_003.wav,Wi-Fi router restart kiya par connection abhi bhi drop ho raha hai.,hinglish
+hing_004,audio/hing_004.wav,Mujhe apne home loan application ke required documents upload karne hain portal par.,hinglish
+hing_005,audio/hing_005.wav,Aapka voice bot kaafi fast answer de raha hai ticket do minute me raise ho gaya.,hinglish
+hing_006,audio/hing_006.wav,Technician visit cancel karke Monday afternoon re-schedule kar dena.,hinglish
+hing_007,audio/hing_007.wav,Agent se turant baat karwao please.,hinglish
+hing_008,audio/hing_008.wav,Bill payment debited from account but invoice showing pending status update.,hinglish
+en_001,audio/en_001.wav,Please cancel my subscription immediately.,en
+en_002,audio/en_002.wav,I need to change my registered billing address.,en
+en_003,audio/en_003.wav,Could you verify if fiber optic broadband coverage is accessible in Indiranagar?,en
+en_004,audio/en_004.wav,The technical engineer resolved the hardware failure quickly and my service is restored.,en
+en_005,audio/en_005.wav,I have been waiting for over thirty minutes on hold and need immediate supervisor escalation.,en
+en_006,audio/en_006.wav,Thank you very much.,en
+en_007,audio/en_007.wav,Check my monthly account statement.,en
+en_008,audio/en_008.wav,Transfer ownership of my commercial broadband line to another business account.,en

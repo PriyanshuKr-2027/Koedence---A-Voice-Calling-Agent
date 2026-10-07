@@ -1,0 +1,83 @@
+{
+  "english": {
+    "p50": {
+      "language": "English",
+      "metric": "p50",
+      "stt_ms": 166.1,
+      "cognitive_fanout_ms": 107.5,
+      "llm_ttft_ms": 154.2,
+      "tts_ttfab_ms": 91.9,
+      "network_out_ms": 29.9,
+      "overhead_gap_ms": 94.3,
+      "total_turnaround_ms": 643.9,
+      "pct_under_800ms": 100.0
+    },
+    "p95": {
+      "language": "English",
+      "metric": "p95",
+      "stt_ms": 175.7,
+      "cognitive_fanout_ms": 110.1,
+      "llm_ttft_ms": 157.1,
+      "tts_ttfab_ms": 94.1,
+      "network_out_ms": 31.2,
+      "overhead_gap_ms": 135.2,
+      "total_turnaround_ms": 703.4,
+      "pct_under_800ms": 100.0
+    },
+    "under_800ms_compliance_rate": 1.0
+  },
+  "hinglish": {
+    "p50": {
+      "language": "Hinglish",
+      "metric": "p50",
+      "stt_ms": 166.2,
+      "cognitive_fanout_ms": 107.9,
+      "llm_ttft_ms": 154.5,
+      "tts_ttfab_ms": 92.2,
+      "network_out_ms": 29.9,
+      "overhead_gap_ms": 93.7,
+      "total_turnaround_ms": 644.3,
+      "pct_under_800ms": 100.0
+    },
+    "p95": {
+      "language": "Hinglish",
+      "metric": "p95",
+      "stt_ms": 175.6,
+      "cognitive_fanout_ms": 109.5,
+      "llm_ttft_ms": 156.8,
+      "tts_ttfab_ms": 94.8,
+      "network_out_ms": 31.3,
+      "overhead_gap_ms": 124.7,
+      "total_turnaround_ms": 692.7,
+      "pct_under_800ms": 100.0
+    },
+    "under_800ms_compliance_rate": 1.0
+  },
+  "overall": {
+    "p50": {
+      "language": "Overall",
+      "metric": "p50",
+      "stt_ms": 166.2,
+      "cognitive_fanout_ms": 107.6,
+      "llm_ttft_ms": 154.3,
+      "tts_ttfab_ms": 92.1,
+      "network_out_ms": 29.9,
+      "overhead_gap_ms": 93.8,
+      "total_turnaround_ms": 643.9,
+      "pct_under_800ms": 100.0
+    },
+    "p95": {
+      "language": "Overall",
+      "metric": "p95",
+      "stt_ms": 175.6,
+      "cognitive_fanout_ms": 109.7,
+      "llm_ttft_ms": 157.0,
+      "tts_ttfab_ms": 94.6,
+      "network_out_ms": 31.3,
+      "overhead_gap_ms": 132.0,
+      "total_turnaround_ms": 700.2,
+      "pct_under_800ms": 100.0
+    },
+    "under_800ms_compliance_rate": 1.0
+  }
+}

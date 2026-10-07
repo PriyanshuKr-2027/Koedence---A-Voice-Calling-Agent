@@ -185,6 +185,8 @@ class CallBase(BaseModel):
     is_test: Optional[bool] = False
     emotion_score: Optional[float] = None
     analysis: Optional[Dict[str, Any]] = {}
+    post_processed_at: Optional[datetime] = None
+    post_steps: Optional[Dict[str, Any]] = {}
 
 class CallCreate(CallBase):
     pass
@@ -195,6 +197,8 @@ class CallUpdate(BaseModel):
     transcript: Optional[str] = None
     emotion_score: Optional[float] = None
     analysis: Optional[Dict[str, Any]] = None
+    post_processed_at: Optional[datetime] = None
+    post_steps: Optional[Dict[str, Any]] = None
 
 class CallResponse(CallBase):
     id: UUID

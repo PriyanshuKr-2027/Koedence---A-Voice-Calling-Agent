@@ -78,4 +78,17 @@ class UpstashRedisClient:
             )
             return res.status_code == 200
 
+    async def keys(self, pattern: str) -> list:
+        """Find all keys matching pattern."""
+        if not self.url or not self.token:
+            return []
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                f"{self.url}/keys/{pattern}",
+                headers=self.headers,
+            )
+            if res.status_code == 200:
+                return res.json().get("result", []) or []
+            return []
+
 redis_client = UpstashRedisClient()

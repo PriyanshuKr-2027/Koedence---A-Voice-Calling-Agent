@@ -1,0 +1,21 @@
+clip_id,transcript,gold_label,gold_valence,text_dominant,text_valence,audio_dominant,audio_valence,valence_difference,fused_dominant,fused_valence
+clip_021,"Koi jaldi nahi hai, jab team free ho tab schedule kar dena visit.",calm,0.5,calm,0.45,calm,0.3,0.15,calm,0.36
+clip_022,"Aapka voice bot bahut fast answer de raha hai, ticket do minute me raise ho gaya! Bahut badhiya.",happy,1.0,frustrated,-0.65,frustrated,-0.8,0.15,frustrated,-0.74
+clip_005,Shaam ko speed itni drop ho jati hai ki meri video calls attend nahi ho pa rahi hain. Please do something.,frustrated,-0.5,frustrated,-0.65,frustrated,-0.77,0.12,frustrated,-0.722
+clip_019,Understood. Please schedule the engineer inspection between 10 AM and 12 PM tomorrow.,calm,0.5,calm,0.45,calm,0.33,0.12,calm,0.378
+clip_011,"I trusted your brand for my remote job, but this constant downtime is risking my employment.",sad,-0.5,sad,-0.55,sad,-0.64,0.09,sad,-0.604
+clip_012,"Agar service theek nahi ho sakti toh bata dijiye, main dusra provider dekh leta hoon.",sad,-0.5,sad,-0.55,sad,-0.64,0.09,sad,-0.604
+clip_013,Mera billing cycle kaunsi date ko reset hota hai please confirm kijiye.,neutral,0.0,neutral,0.0,neutral,-0.09,0.09,neutral,-0.054
+clip_016,What documents are required to transfer broadband connection ownership?,neutral,0.0,neutral,0.0,neutral,0.09,0.09,neutral,0.054
+clip_018,"Haan theek hai, aap ticket number note kara dijiye, main kal subah check kar lunga.",calm,0.5,frustrated,-0.65,frustrated,-0.74,0.09,frustrated,-0.704
+clip_025,Thank you so much! You resolved my problem on the first call itself without bouncing me around.,happy,1.0,happy,0.85,happy,0.94,0.09,happy,0.904
+clip_001,Yeh teesri baar call kar raha hoon aur mera router abhi tak replace nahi hua! Aap log fraud kar rahe hain!,angry,-1.0,angry,-0.85,angry,-0.91,0.06,angry,-0.886
+clip_002,I have been on hold for forty minutes and your agent hung up on me. Transfer me to a supervisor right now!,angry,-1.0,angry,-0.85,angry,-0.91,0.06,angry,-0.886
+clip_006,My monthly invoice has an extra roaming charge of 450 rupees that I never activated.,frustrated,-0.5,frustrated,-0.65,frustrated,-0.71,0.06,frustrated,-0.686
+clip_007,"Technician ne subah ka time diya tha aur ab shaam ke paanch baj gaye hain, koi update nahi mila.",frustrated,-0.75,neutral,0.0,neutral,-0.06,0.06,neutral,-0.036
+clip_008,I keep getting automated payment failed alerts even though the money was debited from my bank.,frustrated,-0.5,frustrated,-0.65,frustrated,-0.71,0.06,frustrated,-0.686
+clip_014,Could you check whether optical fiber lines are available in Indiranagar 2nd stage?,neutral,0.0,neutral,0.0,neutral,0.06,0.06,neutral,0.036
+clip_015,Mujhe apna registered email address update karwana hai account pe.,neutral,0.0,neutral,0.0,neutral,-0.06,0.06,neutral,-0.036
+clip_017,Ek baar mera current plan validity aur remaining data quota bata dijiye.,neutral,0.0,neutral,0.0,neutral,0.06,0.06,neutral,0.036
+clip_004,Cancel my subscription immediately! I am not paying a single rupee for this useless service!,angry,-1.0,angry,-0.85,angry,-0.88,0.03,angry,-0.868
+clip_009,"Wi-Fi connection bedroom me baar baar disconnect ho jata hai, signal bahut weak hai.",frustrated,-0.5,frustrated,-0.65,frustrated,-0.68,0.03,frustrated,-0.668

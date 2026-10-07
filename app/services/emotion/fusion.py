@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 def fuse_emotion_signals(
     text: Optional[Dict[str, Any]],
     audio: Optional[Dict[str, Any]],
+    audio_weight: float = 0.6,
 ) -> Dict[str, Any]:
     """
     Fuses text-based (Groq NLP) and audio-based (Hume AI) emotion signals
@@ -15,9 +16,11 @@ def fuse_emotion_signals(
 
     Fusion weighting rules:
       - If audio is available and text is available:
-          valence = 0.6 * audio['valence'] + 0.4 * text['valence']
-          arousal = 0.6 * audio['arousal'] + 0.4 * text['arousal']
-          dominant = audio['dominant'] if audio['confidence'] > 0.6 else text['dominant']
+          w_a = float(audio_weight)
+          w_t = 1.0 - w_a
+          valence = w_a * audio['valence'] + w_t * text['valence']
+          arousal = w_a * audio['arousal'] + w_t * text['arousal']
+          dominant = audio['dominant'] if (audio['confidence'] > 0.6 and w_a > 0.0) else text['dominant']
           confidence = max(audio['confidence'], text['confidence'])
       - If audio is available and text is None:
           uses audio signal values directly.
@@ -27,6 +30,9 @@ def fuse_emotion_signals(
           returns fallback neutral state.
     """
     now_ms = int(time.time() * 1000)
+
+    w_a = float(audio_weight)
+    w_t = max(0.0, 1.0 - w_a)
 
     if audio is not None and isinstance(audio, dict):
         audio_val = float(audio.get("valence", 0.0))
@@ -40,10 +46,10 @@ def fuse_emotion_signals(
             text_dom = str(text.get("dominant", "neutral"))
             text_conf = float(text.get("confidence", 0.5))
 
-            valence = 0.6 * audio_val + 0.4 * text_val
-            arousal = 0.6 * audio_aro + 0.4 * text_aro
-            dominant = audio_dom if audio_conf > 0.6 else text_dom
-            confidence = max(audio_conf, text_conf)
+            valence = w_a * audio_val + w_t * text_val
+            arousal = w_a * audio_aro + w_t * text_aro
+            dominant = audio_dom if (audio_conf > 0.6 and w_a > 0.0) else text_dom
+            confidence = max(audio_conf, text_conf) if (w_a > 0 and w_t > 0) else (audio_conf if w_a >= 1.0 else text_conf)
         else:
             valence = audio_val
             arousal = audio_aro

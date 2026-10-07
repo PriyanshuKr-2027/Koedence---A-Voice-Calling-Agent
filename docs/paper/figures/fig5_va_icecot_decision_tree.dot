@@ -1,0 +1,35 @@
+digraph VA_ICECoT_DecisionTree {
+    rankdir=TB;
+    nodesep=0.5;
+    ranksep=0.5;
+
+    node [fontname="Helvetica", fontsize=11, shape=box, style="filled,rounded", penwidth=1.5];
+    edge [fontname="Helvetica", fontsize=9.5, color="#334155", penwidth=1.2];
+
+    Start [label="User Utterance Ingested\n(Transcript + V_fused)", fillcolor="#0f172a", fontcolor="#ffffff", shape=ellipse];
+    Classify [label="Zero-Shot Intent Classification\nExtract Predicted Intent & Score C_intent", fillcolor="#f1f5f9", color="#475569"];
+    CheckConf [label="Confidence Threshold\nC_intent >= 0.70?", shape=diamond, fillcolor="#eff6ff", color="#3b82f6"];
+    
+    CheckEmotion [label="Fused Emotional Frustration\nV_fused(frustration) > 0.65?", shape=diamond, fillcolor="#fff1f2", color="#e11d48"];
+    EscalateHuman [label="Trigger Emergency Human Escalation\n(Bypass Autonomous Tool Execution)", fillcolor="#fee2e2", color="#dc2626", fontcolor="#991b1b"];
+    
+    SlotExtraction [label="Extract Named Slots\n(Slot Constraint Ratio Rs = N_filled / N_req)", fillcolor="#f8fafc", color="#64748b"];
+    CheckSlots [label="Constraint Satisfaction\nRs == 1.0 (All Slots Filled)?", shape=diamond, fillcolor="#fefce8", color="#ca8a04"];
+    
+    FireConnector [label="Fire Mid-Call Connector Tool\n(Google Calendar, CRM API, DB Insert)", fillcolor="#dcfce7", color="#16a34a", fontcolor="#14532d"];
+    AskMissingSlot [label="Generate In-Context Prompt:\nAsk for Missing Slot (VA-ICECoT Turn)", fillcolor="#fef3c7", color="#d97706", fontcolor="#78350f"];
+    ClarifyIntent [label="Solicit Intent Clarification\n(Ambiguity Handling Loop)", fillcolor="#f1f5f9", color="#64748b"];
+
+    Start -> Classify;
+    Classify -> CheckConf;
+    
+    CheckConf -> CheckEmotion [label="Yes (C_intent >= 0.70)"];
+    CheckConf -> ClarifyIntent [label="No (Uncertain)"];
+    
+    CheckEmotion -> EscalateHuman [label="High Frustration"];
+    CheckEmotion -> SlotExtraction [label="Acceptable Emotion"];
+    
+    SlotExtraction -> CheckSlots;
+    CheckSlots -> FireConnector [label="Yes (Rs = 1.0)"];
+    CheckSlots -> AskMissingSlot [label="No (Rs < 1.0)"];
+}

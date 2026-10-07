@@ -108,10 +108,11 @@ def add_frustration_edges(
     topics: List[str],
     episode_id: str,
     emotion_state: Optional[Dict[str, Any]] = None,
+    call_id: Optional[str] = None,
 ) -> bool:
     """
     MERGE Topic nodes and FRUSTRATED_ABOUT edges.
-    ON MATCH: increment count, update last_seen + last_emotion_state.
+    ON MATCH: increment count once per call_id, update last_seen + last_emotion_state.
     """
     g = connect_falkor(contact_id)
     if not g:
@@ -132,22 +133,38 @@ def add_frustration_edges(
                 continue
             topic_clean = topic.strip()
 
-            query = (
-                "MATCH (c:Contact {id: $contact_id}) "
-                "MERGE (t:Topic {name: $topic_name}) "
-                "MERGE (c)-[r:FRUSTRATED_ABOUT]->(t) "
-                "ON CREATE SET r.count = 1, r.last_emotion_state = $emotion_json, r.last_seen = $now_str "
-                "ON MATCH SET r.count = coalesce(r.count, 0) + 1, r.last_emotion_state = $emotion_json, r.last_seen = $now_str"
-            )
-            g.query(
-                query,
-                {
+            if call_id:
+                query = (
+                    "MATCH (c:Contact {id: $contact_id}) "
+                    "MERGE (t:Topic {name: $topic_name}) "
+                    "MERGE (c)-[r:FRUSTRATED_ABOUT]->(t) "
+                    "ON CREATE SET r.count = 1, r.last_call_id = $call_id, r.last_emotion_state = $emotion_json, r.last_seen = $now_str "
+                    "ON MATCH SET r.count = CASE WHEN r.last_call_id = $call_id THEN coalesce(r.count, 1) ELSE coalesce(r.count, 0) + 1 END, "
+                    "r.last_call_id = $call_id, r.last_emotion_state = $emotion_json, r.last_seen = $now_str"
+                )
+                params = {
                     "contact_id": contact_id,
                     "topic_name": topic_clean,
                     "emotion_json": emotion_json,
                     "now_str": now_str,
-                },
-            )
+                    "call_id": call_id,
+                }
+            else:
+                query = (
+                    "MATCH (c:Contact {id: $contact_id}) "
+                    "MERGE (t:Topic {name: $topic_name}) "
+                    "MERGE (c)-[r:FRUSTRATED_ABOUT]->(t) "
+                    "ON CREATE SET r.count = 1, r.last_emotion_state = $emotion_json, r.last_seen = $now_str "
+                    "ON MATCH SET r.count = coalesce(r.count, 0) + 1, r.last_emotion_state = $emotion_json, r.last_seen = $now_str"
+                )
+                params = {
+                    "contact_id": contact_id,
+                    "topic_name": topic_clean,
+                    "emotion_json": emotion_json,
+                    "now_str": now_str,
+                }
+
+            g.query(query, params)
         return True
     except Exception as e:
         logger.error(f"Error in add_frustration_edges for contact {contact_id}: {e}")
@@ -334,28 +351,37 @@ def get_graph_data(contact_id: str) -> Dict[str, Any]:
 
 def delete_contact_graph(contact_id: str) -> bool:
     """
-    MATCH (c:Contact {id: $contact_id}) OPTIONAL MATCH (c)-[*]->(n) DETACH DELETE c, n
-    Or delete entire contact graph instance if supported.
+    Deletes all nodes in the contact-specific graph and drops the graph instance.
+    Confirms the graph is completely gone (count(n) == 0).
     """
     g = connect_falkor(contact_id)
     if not g:
         return True
 
     try:
-        # Delete nodes cypher
-        query = (
-            "MATCH (c:Contact {id: $contact_id}) "
-            "OPTIONAL MATCH (c)-[*]->(n) "
-            "DETACH DELETE c, n"
-        )
-        g.query(query, {"contact_id": contact_id})
+        # 1. Detach and delete all nodes
+        query = "MATCH (n) DETACH DELETE n"
+        g.query(query)
 
-        # Also attempt g.delete() if graph has delete method
+        # 2. Attempt to drop graph instance completely
         if hasattr(g, "delete"):
             try:
                 g.delete()
             except Exception:
                 pass
+
+        # 3. Confirm graph is gone / empty
+        try:
+            res = g.query("MATCH (n) RETURN count(n)")
+            if res and res.result_set:
+                cnt = res.result_set[0][0]
+                if cnt > 0:
+                    logger.error("FalkorDB graph contact_%s still has %d nodes after deletion", contact_id, cnt)
+                    return False
+        except Exception:
+            # Query on non-existent/dropped graph confirms deletion
+            pass
+
         return True
     except Exception as e:
         logger.error(f"Error deleting contact graph for {contact_id}: {e}")

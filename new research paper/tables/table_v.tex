@@ -1,0 +1,17 @@
+% TABLE V: Memory-Tier Ablation on D1 and D2
+\begin{table}[t]
+\centering
+\caption{TABLE V: Memory-Tier Ablation on D1 and D2}
+\label{tab:memory_ablation}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & Accuracy D1 (\%) & Accuracy D2 (\%) & Recall@5 & Tokens / call & Retrieval ms \\
+\midrule
+No memory & 25.0 [6.2, 43.8] & 25.0 [0.0, 50.0] & n/a & 44.3 & 0.07 \\
+T2 vector only & 25.0 [6.2, 43.8] & 100.0 [100.0, 100.0] & 0.00 [0.00, 0.00] & 92.1 & 0.09 \\
+T2 $+$ T3 & 25.0 [6.2, 43.8] & 100.0 [100.0, 100.0] & 0.00 [0.00, 0.00] & 161.1 & 0.08 \\
+T2 $+$ T3 $+$ T4 (graph) & 37.5 [18.8, 62.5] & 100.0 [100.0, 100.0] & 0.00 [0.00, 0.00] & 341.4 & 0.08 \\
+Full (T1 to T4) & 37.5 [18.8, 62.5] & 100.0 [100.0, 100.0] & 0.00 [0.00, 0.00] & 341.4 & 0.08 \\
+\bottomrule
+\end{tabular}
+\end{table}

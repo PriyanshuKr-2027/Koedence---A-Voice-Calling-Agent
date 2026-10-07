@@ -1,0 +1,17 @@
+{
+  "contacts_tested": 25,
+  "tiers_audited": [
+    "redis",
+    "pgvector",
+    "postgres",
+    "falkordb",
+    "intent_events"
+  ],
+  "seed": 0,
+  "cascade_deletion_success_rate": 1.0,
+  "ci_success_rate": [
+    1.0,
+    1.0
+  ],
+  "zero_residual_verified": true
+}

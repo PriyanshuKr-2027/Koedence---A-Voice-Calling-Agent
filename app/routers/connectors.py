@@ -11,7 +11,7 @@ from app.models.connectors import (
     ConnectorConfigUpdate,
     ConnectorType,
 )
-from app.routers.auth import get_current_user
+from app.routers.auth import require_authenticated_user
 from app.utils.encryption import decrypt_dict, encrypt_dict
 
 try:
@@ -212,7 +212,7 @@ async def _test_connector_connectivity(
 
 
 @router.get("", response_model=List[ConnectorConfigResponse])
-async def list_connectors(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def list_connectors(current_user: Dict[str, Any] = Depends(require_authenticated_user)):
     """
     Returns all connector_configs for the current user's org.
     """
@@ -233,7 +233,7 @@ async def list_connectors(current_user: Dict[str, Any] = Depends(get_current_use
 async def get_connector(
     connector_type: str,
     agent_id: Optional[UUID] = Query(None),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
 ):
     """
     Returns the config for a specific connector type for current org.
@@ -279,7 +279,7 @@ async def get_connector(
 async def upsert_connector(
     connector_type: str,
     payload: ConnectorConfigCreate,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
 ):
     """
     Creates or updates (upsert) the connector config for the org.
@@ -342,7 +342,7 @@ async def upsert_connector(
 async def delete_connector(
     connector_type: str,
     agent_id: Optional[UUID] = Query(None),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
 ):
     """
     Soft-deletes connector config by setting is_enabled = False and clearing config to {}.
@@ -376,7 +376,7 @@ async def delete_connector(
 async def test_connector(
     connector_type: str,
     agent_id: Optional[UUID] = Query(None),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
 ):
     """
     Runs a quick connectivity test for the connector using stored config.

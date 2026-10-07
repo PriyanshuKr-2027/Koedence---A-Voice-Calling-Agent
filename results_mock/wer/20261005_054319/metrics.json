@@ -1,0 +1,20 @@
+{
+  "models": {
+    "hinglish_primary": "sarvam/saarika:v2",
+    "baseline": "groq/whisper-large-v3",
+    "seed": 0
+  },
+  "total_test_phrases": 5,
+  "mean_wer_sarvam": 0.0,
+  "ci_wer_sarvam": [
+    0.0,
+    0.0
+  ],
+  "mean_wer_whisper": 0.2278,
+  "ci_wer_whisper": [
+    0.0889,
+    0.3611
+  ],
+  "wer_improvement_sarvam": 0.2278,
+  "paired_p_value": 0.0
+}

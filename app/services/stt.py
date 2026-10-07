@@ -55,38 +55,51 @@ async def transcribe_audio(
             logger.warning("Sarvam API key missing for Hinglish STT; falling back to Groq Whisper")
             return await _transcribe_groq_whisper(audio_bytes, api_keys)
 
-        try:
-            url = "https://api.sarvam.ai/speech-to-text"
-            headers = {"api-subscription-key": sarvam_key}
-            files = {
-                "file": ("audio.wav", audio_bytes, "audio/wav")
-            }
-            data = {
-                "model": "saarika:v2",
-                "language_code": "hi-IN",
-                "with_timings": "false",
-            }
-
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(url, headers=headers, files=files, data=data)
-                response.raise_for_status()
-                res_data = response.json()
-
-                transcript = (
-                    res_data.get("transcript")
-                    or res_data.get("text")
-                    or (res_data.get("results", [{}])[0].get("transcript") if res_data.get("results") else "")
-                    or ""
-                )
-                logger.debug("Sarvam STT success — transcript length: %d", len(transcript))
-                return transcript.strip()
-
-        except Exception as exc:
-            logger.error("Sarvam AI STT error: %s. Falling back to Groq Whisper.", exc)
-            return await _transcribe_groq_whisper(audio_bytes, api_keys)
-
+        transcript = await _transcribe_sarvam_saarika(audio_bytes, api_keys)
+        if transcript:
+            return transcript
+        logger.warning("Sarvam returned empty transcript; falling back to Groq Whisper")
+        return await _transcribe_groq_whisper(audio_bytes, api_keys)
     else:
         return await _transcribe_groq_whisper(audio_bytes, api_keys)
+
+
+async def _transcribe_sarvam_saarika(audio_bytes: bytes, api_keys: Any) -> str:
+    """Helper function to POST audio to Sarvam AI Saarika v2 endpoint."""
+    sarvam_key = _extract_key(api_keys, "sarvam", settings.SARVAM_API_KEY)
+    if not sarvam_key:
+        logger.error("Sarvam API key not provided for STT transcription")
+        return ""
+
+    try:
+        url = "https://api.sarvam.ai/speech-to-text"
+        headers = {"api-subscription-key": sarvam_key}
+        files = {
+            "file": ("audio.wav", audio_bytes, "audio/wav")
+        }
+        data = {
+            "model": "saarika:v2",
+            "language_code": "hi-IN",
+            "with_timings": "false",
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(url, headers=headers, files=files, data=data)
+            response.raise_for_status()
+            res_data = response.json()
+
+            transcript = (
+                res_data.get("transcript")
+                or res_data.get("text")
+                or (res_data.get("results", [{}])[0].get("transcript") if res_data.get("results") else "")
+                or ""
+            )
+            logger.debug("Sarvam STT success — transcript length: %d", len(transcript))
+            return transcript.strip()
+
+    except Exception as exc:
+        logger.error("Sarvam AI STT error: %s", exc)
+        return ""
 
 
 async def _transcribe_groq_whisper(audio_bytes: bytes, api_keys: Any) -> str:

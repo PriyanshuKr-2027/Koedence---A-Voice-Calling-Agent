@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException, status, WebSocket, WebSocketDisconnect
-from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 import time
 import logging
 from app.models.schemas import (
     CallCreate, CallUpdate, CallResponse, LiveKitTokenRequest, LiveKitTokenResponse
 )
+from app.routers.auth import require_authenticated_user
+from app.core.tokens import verify_call_stream_token
 from app.services.supabase_client import supabase
 from app.core.config import settings
 from livekit import api as livekit_api
@@ -23,11 +25,18 @@ async def list_calls(
     agent_id: Optional[UUID] = None,
     direction: Optional[str] = None,
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
 ):
+    if str(org_id) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: cannot access calls of another organization",
+        )
+    effective_org = current_user["org_id"]
     if not supabase:
         return []
-    query = supabase.table("calls").select("*").eq("org_id", str(org_id))
+    query = supabase.table("calls").select("*").eq("org_id", str(effective_org))
     if agent_id:
         query = query.eq("agent_id", str(agent_id))
     if direction and direction.lower() != "all":
@@ -37,35 +46,57 @@ async def list_calls(
     return res.data or []
 
 @router.post("", response_model=CallResponse, status_code=status.HTTP_201_CREATED)
-async def create_call(call: CallCreate):
+async def create_call(
+    call: CallCreate,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
-    res = supabase.table("calls").insert(call.model_dump(mode="json")).execute()
+    payload = call.model_dump(mode="json")
+    payload["org_id"] = current_user["org_id"]
+    res = supabase.table("calls").insert(payload).execute()
     if not res.data:
         raise HTTPException(status_code=400, detail="Failed to record call")
     return res.data[0]
 
 @router.get("/{call_id}", response_model=CallResponse)
-async def get_call(call_id: UUID):
+async def get_call(
+    call_id: UUID,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     if not supabase:
         raise HTTPException(status_code=500, detail="Database client unavailable")
     res = supabase.table("calls").select("*").eq("id", str(call_id)).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Call record not found")
+    if str(res.data.get("org_id")) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: call belongs to another organization",
+        )
     return res.data
 
 
 @router.get("/{call_id}/memory")
-async def get_call_memory_debug(call_id: UUID, org_id: Optional[UUID] = None):
+async def get_call_memory_debug(
+    call_id: UUID,
+    org_id: Optional[UUID] = None,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     """
     Debug endpoint for inspecting active/recent call short-term memory from Redis.
-    Performs org-scoped authorization check if org_id is supplied.
+    Performs org-scoped authorization check.
     """
     from app.services.memory import short_term
 
-    if supabase and org_id:
+    if supabase:
         res = supabase.table("calls").select("org_id").eq("id", str(call_id)).execute()
-        if not res.data or str(res.data[0].get("org_id")) != str(org_id):
+        if res.data and str(res.data[0].get("org_id")) != current_user["org_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized access to call memory"
+            )
+        if not res.data and org_id and str(org_id) != current_user["org_id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Unauthorized access to call memory"
@@ -82,7 +113,10 @@ async def get_call_memory_debug(call_id: UUID, org_id: Optional[UUID] = None):
     return memory
 
 @router.post("/token", response_model=LiveKitTokenResponse)
-async def generate_livekit_token(req: LiveKitTokenRequest):
+async def generate_livekit_token(
+    req: LiveKitTokenRequest,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     """
     Generates a LiveKit JWT token for connecting to real-time voice call rooms.
     """
@@ -126,16 +160,33 @@ async def generate_livekit_token(req: LiveKitTokenRequest):
 # ---------------------------------------------------------------------------
 
 @router.websocket("/stream/{call_id}")
-async def call_stream(websocket: WebSocket, call_id: str, agent_id: str = "", contact_id: str = ""):
+async def call_stream(
+    websocket: WebSocket,
+    call_id: str,
+    token: Optional[str] = None,
+    exp: Optional[int] = None,
+    agent_id: str = "",
+    contact_id: str = "",
+):
     """
     WebSocket endpoint that Twilio's <Stream> connects to.
-    Hands off the live WebSocket to voice_pipeline.start_pipeline().
-
-    URL params (passed by TwiML <Parameter> tags):
-      call_id    — UUID from calls table
-      agent_id   — UUID of the agent handling the call
-      contact_id — UUID of the contact (caller)
+    Requires HMAC token and exp in URL query parameters.
     """
+    query_params = dict(websocket.query_params)
+    token_val = token or query_params.get("token")
+    exp_val = exp if exp is not None else query_params.get("exp")
+
+    is_valid = False
+    if token_val and exp_val:
+        try:
+            is_valid = verify_call_stream_token(str(call_id), token_val, int(exp_val))
+        except (ValueError, TypeError):
+            is_valid = False
+
+    if not is_valid:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await websocket.accept()
     logger.info("WebSocket stream opened: call_id=%s agent_id=%s", call_id, agent_id)
 
@@ -185,7 +236,11 @@ class WebCallStartResponse(_BaseModel):
 
 
 @router.post("/webcall/start", response_model=WebCallStartResponse)
-async def start_webcall(req: WebCallStartRequest):
+async def start_webcall(
+    req: WebCallStartRequest,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
+    req.org_id = current_user["org_id"]
     """
     Starts a browser-to-LiveKit web call.
 
@@ -345,7 +400,11 @@ async def webcall_sse_events(call_id: str):
 
 
 @router.delete("/webcall/{call_id}/end")
-async def end_webcall(call_id: str, org_id: str):
+async def end_webcall(
+    call_id: str,
+    org_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
     """
     Terminates a running web call.
 
@@ -354,6 +413,19 @@ async def end_webcall(call_id: str, org_id: str):
     3. Updates the call record: status=completed, duration_seconds, ended_at
     4. Returns final duration so the frontend can display it
     """
+    if org_id and str(org_id) != current_user["org_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: cannot end call of another organization",
+        )
+    if supabase:
+        check_res = supabase.table("calls").select("org_id").eq("id", call_id).execute()
+        if check_res.data and str(check_res.data[0].get("org_id")) != current_user["org_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: call belongs to another organization",
+            )
+
     from app.services.webcall_pipeline import cancel_webcall_task
 
     cancelled = cancel_webcall_task(call_id)
@@ -404,7 +476,11 @@ class OutboundCallRequest(CallCreate):
     pass
 
 @router.post("/outbound", status_code=status.HTTP_202_ACCEPTED)
-async def initiate_outbound_call(payload: OutboundCallRequest):
+async def initiate_outbound_call(
+    payload: OutboundCallRequest,
+    current_user: Dict[str, Any] = Depends(require_authenticated_user),
+):
+    payload.org_id = UUID(current_user["org_id"])
     """
     Initiates an outbound call via Twilio REST API.
     Creates a calls row and returns the Twilio call SID.

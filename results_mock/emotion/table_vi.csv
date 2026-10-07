@@ -1,0 +1,4 @@
+Signal,Macro-F1,Accuracy,Valence MAE,Pearson r,Added Latency ms
+Text-Only,0.8474,0.8400,0.2520,0.7209,0.00
+Audio-Only,0.8474,0.8400,0.2928,0.7007,0.01
+Fused (w=0.6),0.8474,0.8400,0.2765,0.7097,0.00

@@ -1,0 +1,17 @@
+Store / Table,Category,Seeded Before (N_before),Retrievable After (N_after),Residue Count,Retention Rate (%),Completeness (C),DPDP Status
+"Redis In-Call Buffer","Tier 1: Upstash Redis (stm:{call_id})",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Redis Webcall Stream","Tier 1: Upstash Redis (webcall:{call_id}:events)",40,40,40,100.0%,0.0000,RESIDUE_DETECTED
+"Redis Slot State","Tier 1: Upstash Redis (slot:{call_id})",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Redis Extra Keys","Tier 1: Upstash Redis (pattern scan)",0,0,0,0.0%,1.0000,CLEARED
+"Contact Profiles","Identity: Postgres Contacts (contacts)",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Calls & Audio Recordings","Relational: Postgres Calls (calls.recording_url)",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Turn-by-Turn Dialogues","Relational: Postgres Call Turns (call_turns)",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Spoken Transcripts","Relational: Postgres Transcripts (call_transcripts)",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Acoustic Emotion Events","Relational: Postgres Emotion Events (emotion_events)",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"Intent Engine Events","Tier 5: Postgres Intent Events (intent_events)",20,0,0,0.0%,1.0000,CLEARED
+"pgvector Semantic Memory","Tier 2: Postgres pgvector (memory_long_term)",20,0,0,0.0%,1.0000,CLEARED
+"Episodic Call Summaries","Tier 3: Postgres Episodic (memory_episodic)",20,0,0,0.0%,1.0000,CLEARED
+"Graph Node Metadata","Relational: Postgres Graph Nodes (memory_graph_nodes)",20,20,20,100.0%,0.0000,RESIDUE_DETECTED
+"FalkorDB Contact Graph","Tier 4: FalkorDB Nodes (contact_{cid})",100,0,0,0.0%,1.0000,CLEARED
+"FalkorDB Global Graph","Tier 4: FalkorDB Canary Global Search",100,0,0,0.0%,1.0000,CLEARED
+"TOTAL / COMPOSITE","All Monorepo Stores",460,200,200,43.48%,0.5652,PARTIAL_ERASURE_DEFICIT

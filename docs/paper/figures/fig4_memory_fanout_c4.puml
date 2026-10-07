@@ -1,0 +1,32 @@
+﻿@startuml fig4_memory_fanout_c4
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+Container_Boundary(memory_sys, "VoCall 4-Tier Cognitive Memory Subsystem") {
+    Component(coordinator, "Memory Fanout Coordinator", "Python 3.12 / AsyncIO", "Dispatches parallel asynchronous retrievers bounded by a strict 50ms timeout")
+    Component(dpdp_mgr, "DPDP Erasure Manager", "Python AsyncIO / HMAC", "Coordinates cascading cryptographic erasure across all four tiers upon statutory request")
+    
+    ComponentDb(tier1, "Tier 1: Ephemeral Turn Buffer", "Upstash Redis (RESP3)", "Stores last 5 conversation turns in FIFO buffer. Sub-10ms retrieval latency.")
+    ComponentDb(tier2, "Tier 2: Vector Semantic Store", "Supabase PostgreSQL (pgvector)", "HNSW index over 1536-dim embeddings. Retrieves semantically similar historical turns in < 30ms.")
+    ComponentDb(tier3, "Tier 3: Relational Session Store", "PostgreSQL 15 (Supabase)", "Stores structured customer profile, session logs, and conversation recency metrics.")
+    ComponentDb(tier4, "Tier 4: Entity Knowledge Graph", "FalkorDB (GraphBLAS Cypher)", "Executes 2-hop graph traversals for customer entity relationships and knowledge links in < 40ms.")
+}
+
+Component(fastapi_core, "FastAPI Voice Pipeline Core", "FastAPI / Pipecat", "Orchestrates speech loop, passes context to Groq LLM")
+ComponentQueue(dead_letter, "Dead-Letter Audit Queue", "PostgreSQL / Redis", "Maintains cryptographic proof of irreversible deletion for DPDP Act auditability")
+
+Rel(fastapi_core, coordinator, "Fetch Context for Current Utterance", "Async Call (t <= 50ms)")
+Rel(coordinator, tier1, "1. Read Recent 5 Turns", "FIFO Pop / LINDEX (< 8ms)")
+Rel(coordinator, tier2, "2. Cosine Similarity Search", "HNSW Cosine (< 30ms)")
+Rel(coordinator, tier3, "3. Extract User Profile & Session", "SQL Index Scan (< 25ms)")
+Rel(coordinator, tier4, "4. 2-Hop Graph Traversal", "Cypher Query (< 40ms)")
+
+Rel(fastapi_core, dpdp_mgr, "User Erasure Request (Section 12 DPDP)", "HMAC Authorized")
+Rel(dpdp_mgr, tier1, "DEL user:{id}:turns", "Async")
+Rel(dpdp_mgr, tier2, "DELETE FROM embeddings WHERE user_id", "Async")
+Rel(dpdp_mgr, tier3, "DELETE FROM sessions WHERE user_id", "Async")
+Rel(dpdp_mgr, tier4, "MATCH (n:User {id: $uid}) DETACH DELETE n", "Async")
+Rel(dpdp_mgr, dead_letter, "Enqueue Audit Receipt", "Guaranteed Delivery")
+
+@enduml

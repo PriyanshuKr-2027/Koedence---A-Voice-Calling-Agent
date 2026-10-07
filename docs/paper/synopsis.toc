@@ -1,0 +1,20 @@
+\contentsline {section}{\numberline {1}Abstract}{1}{section.1}%
+\contentsline {section}{\numberline {2}Introduction and Background}{1}{section.2}%
+\contentsline {section}{\numberline {3}Problem Statement and Research Gaps}{1}{section.3}%
+\contentsline {section}{\numberline {4}Project Objectives}{2}{section.4}%
+\contentsline {section}{\numberline {5}Literature Survey and Existing Systems}{3}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Academic Research and Theoretical Foundations}{3}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Comparison with Commercial Voice Platforms}{3}{subsection.5.2}%
+\contentsline {section}{\numberline {6}Proposed System Architecture and Methodology}{4}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Four-Tier Cognitive Memory Mechanism}{5}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Dual-Signal Emotion Fusion Formulation}{6}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}VA-ICECoT Reasoning and Intent Rules}{6}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}DPDP Act 2023 Cascading Deletion Protocol}{6}{subsection.6.4}%
+\contentsline {section}{\numberline {7}Hardware and Software Specifications}{7}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Software Stack}{7}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Development Hardware Requirements}{7}{subsection.7.2}%
+\contentsline {section}{\numberline {8}Turn Latency Budget and Free-Tier Economics}{7}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Free-Tier Economic Feasibility}{8}{subsection.8.1}%
+\contentsline {section}{\numberline {9}Evaluation Strategy and Metrics}{8}{section.9}%
+\contentsline {section}{\numberline {10}Project Work Plan and Milestones}{8}{section.10}%
+\contentsline {section}{\numberline {11}Expected Outcomes and Deliverables}{9}{section.11}%

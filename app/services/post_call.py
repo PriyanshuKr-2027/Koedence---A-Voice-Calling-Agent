@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -52,6 +53,17 @@ async def fire_post_call_connectors(org_id: str, agent_id: str, call_data: Dict[
       call_id, contact_phone, contact_name, agent_name, call_summary,
       emotion_score, duration_seconds, transcript, structured_data, success_eval
     """
+    call_id = call_data.get("call_id")
+    if call_id and supabase:
+        try:
+            call_res = supabase.table("calls").select("post_steps").eq("id", str(call_id)).limit(1).execute()
+            if call_res.data and len(call_res.data) > 0:
+                steps = call_res.data[0].get("post_steps") or {}
+                if isinstance(steps, dict) and steps.get("connectors"):
+                    logger.info("Connectors already executed for call_id=%s; skipping duplicate dispatch", call_id)
+                    return []
+        except Exception as exc:
+            logger.warning("Failed checking connector step marker for call %s: %s", call_id, exc)
     target_types = ["hubspot", "salesforce", "postgres", "whatsapp", "zapier", "custom_webhook", "slack"]
     configs = await get_enabled_connectors(org_id, target_types)
 
@@ -149,5 +161,18 @@ async def fire_post_call_connectors(org_id: str, agent_id: str, call_data: Dict[
             logger.error("Connector %s failed: %s", ctype_name, result)
         else:
             logger.info("Connector %s result: %s", ctype_name, result)
+
+    if call_id and supabase:
+        try:
+            call_res = supabase.table("calls").select("post_steps").eq("id", str(call_id)).limit(1).execute()
+            current_steps = {}
+            if call_res.data and len(call_res.data) > 0:
+                current_steps = call_res.data[0].get("post_steps") or {}
+                if not isinstance(current_steps, dict):
+                    current_steps = {}
+            current_steps["connectors"] = datetime.now(timezone.utc).isoformat()
+            supabase.table("calls").update({"post_steps": current_steps}).eq("id", str(call_id)).execute()
+        except Exception as exc:
+            logger.warning("Failed recording connector step marker for call %s: %s", call_id, exc)
 
     return list(results)

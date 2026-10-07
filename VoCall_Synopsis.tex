@@ -1,0 +1,367 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[left=1.25in, right=1.0in, top=1.0in, bottom=1.0in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{setspace}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{hyperref}
+
+% 1.5 Line Spacing
+\onehalfspacing
+
+% Paragraph spacing & indentation
+\setlength{\parskip}{0.6em}
+\setlength{\parindent}{0pt}
+
+% Section Numbering Depth & TOC Depth
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+
+% Table of Contents Formatting (dot leaders for sections)
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftsecindent}{0pt}
+\setlength{\cftsubsecindent}{1.5em}
+\setlength{\cftbeforesecskip}{0.35em}
+
+% Clean Hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=black
+}
+
+% Clean Lists
+\setlist[enumerate]{leftmargin=2em, topsep=2pt, itemsep=2pt, parsep=2pt}
+\setlist[itemize]{leftmargin=2em, topsep=2pt, itemsep=2pt, parsep=2pt}
+
+% Heading Spacing
+\titlespacing*{\section}{0pt}{1.3em}{0.5em}
+\titlespacing*{\subsection}{0pt}{1.0em}{0.3em}
+
+\begin{document}
+
+% ==============================================================================
+% TITLE PAGE
+% ==============================================================================
+\begin{titlepage}
+\begin{center}
+    \includegraphics[width=0.72\textwidth]{gniot_logo.png}\\[0.8cm]
+    
+    {\large \textbf{DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING}}\\[0.2cm]
+    {\large \textbf{(ARTIFICIAL INTELLIGENCE \& DATA SCIENCE)}}\\[1.2cm]
+
+    {\LARGE \textbf{SYNOPSIS}}\\[1.2cm]
+
+    {\Large \textbf{VOCALL}}\\[0.3cm]
+    {\large \textbf{(THE MEMORY AUGMENTED VOICE CALLING AGENT WITH EMOTIONAL AWARENESS)}}\\[2.0cm]
+
+    \begin{minipage}[t]{0.42\textwidth}
+        \textbf{\large Guided By:}\\[0.3cm]
+        \textbf{Dr. Shiv Kant}\\
+        \textit{Assistant Professor}\\
+        Department of CSE (AI \& DS)
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.54\textwidth}
+        \textbf{\large Submitted By:}\\[0.3cm]
+        \textbf{Priyanshu Kumar} (2301321630027)\\[0.2cm]
+        \textbf{Ananya Gupta} (2301321630007)\\[0.2cm]
+        \textbf{Abhishek Kumar Singh} (2301321630002)\\[0.2cm]
+        \textbf{Adarsh Pandey} (2301321630005)
+    \end{minipage}
+
+    \vfill
+
+    {\large \textbf{Greater Noida Institute of Technology (Engg. Institute), Greater Noida}}\\[0.2cm]
+    {\large \textbf{Dr. A.P.J. Abdul Kalam Technical University, Lucknow}}\\[0.3cm]
+\end{center}
+\end{titlepage}
+
+% ==============================================================================
+% DECLARATION & ACKNOWLEDGEMENT
+% ==============================================================================
+\newpage
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+\section*{DECLARATION}
+
+We hereby declare that this project work entitled \textbf{``VoCall -- The Memory Augmented Voice Calling Agent with Emotional Awareness''} has been prepared by us during the year 2025--26 under the guidance of \textbf{Dr. Shiv Kant}, Department of Computer Science and Engineering (Artificial Intelligence \& Data Science), GNIOT, Greater Noida, in partial fulfilment of the B.Tech degree prescribed by the college.
+
+We also declare that this project is the outcome of our own effort, and that it has not been submitted to any other university for the award of any degree.
+
+\vspace{2.5cm}
+
+\begin{flushright}
+    \textbf{Priyanshu Kumar} (2301321630027)\\[0.2cm]
+    \textbf{Ananya Gupta} (2301321630007)\\[0.2cm]
+    \textbf{Abhishek Kumar Singh} (2301321630002)\\[0.2cm]
+    \textbf{Adarsh Pandey} (2301321630005)
+\end{flushright}
+
+\newpage
+\section*{ACKNOWLEDGEMENT}
+
+We have taken efforts in this project. However, it would not have been possible without the kind support and help of many individuals and organizations. We would like to extend our sincere thanks to all of them.
+
+We are highly indebted to \textbf{Dr. Shiv Kant} for his guidance and constant supervision as well as for providing necessary information regarding the project, and also for his support in completing the project. We would like to express our gratitude towards our parents and members of GNIOT for their kind co-operation and encouragement which helped us in the completion of this project. We would also like to express our special gratitude and thanks to the faculty members of the Department of Computer Science and Engineering (AI \& DS) for giving us such attention and time.
+
+We thank and appreciate our colleagues who assisted us in developing this project and all the people who willingly helped us out with their abilities.
+
+\newpage
+{
+  \hypersetup{linkcolor=black}
+  \tableofcontents
+}
+
+\newpage
+\pagenumbering{arabic}
+\setcounter{page}{6}
+
+% ==============================================================================
+% 1. INTRODUCTION
+% ==============================================================================
+\section{INTRODUCTION}
+Voice is the most natural medium of human communication, yet current production conversational voice agents (such as Vapi, Retell AI, and OmniDim) remain fundamentally transactional, forgetful, and emotionally blind. Traditional Interactive Voice Response (IVR) setups and modern single-turn LLM voice bots treat every telephone call as an isolated event. A returning customer calling three times in a single week regarding an unresolved issue must repeat their identity, ticket details, and emotional grievance on every turn. Furthermore, existing voice agents cannot sense whether a caller is calm, confused, or furious in real time. This operational amnesia damages customer trust and inflates handle times across logistics, banking, healthcare, and citizen helplines.
+
+VoCall resolves this breakdown by introducing an enterprise-grade, open-source, full-duplex spoken dialogue platform designed for sub-500ms turnaround latency (well within the 800ms human conversational threshold). The system combines 20--40ms audio frame processing with a 4-Tier Cognitive Memory Architecture, a Dual-Signal Multimodal Emotion Fusion Engine, an Intention-Centric Chain-of-Thought (VA-ICECoT) reasoning framework, and a native code-switched Hinglish speech pipeline. Together, these systems allow a voice agent to remember callers across sessions, perceive emotional distress mid-turn from both acoustic prosody and text sentiment, dynamically adapt conversational strategy, and trigger third-party actions -- all deployable on free-tier infrastructure.
+
+% ==============================================================================
+% 2. PROBLEM STATEMENT
+% ==============================================================================
+\section{PROBLEM STATEMENT}
+\begin{itemize}
+    \item \textbf{Cross-Session Amnesia (Single-Store Memory Failure):} Commercial voice platforms maintain zero memory across sessions. Research memory systems like MemGPT and Mem0 rely on flat vector stores that introduce high paging latencies ($>$1000ms) and cannot execute multi-hop causal graph traversals across past call episodes.
+    \item \textbf{Unimodal and Post-Call Emotion Blind Spots:} Platforms like OmniDim run sentiment classifiers as batch jobs after call completion. Post-call analysis cannot alter in-flight tone, while text-only sentiment classifiers fail entirely on sarcasm or acoustic strain where words appear polite but pitch indicates severe anger.
+    \item \textbf{Disconnected Intent and Affective Reasoning:} Existing pipelines isolate intent classification from emotional appraisal. No production voice platform couples intent classification, multi-turn slot extraction, and affective appraisal inside a sub-500ms voice turn deadline.
+    \item \textbf{Translation Wrappers for Multilingual Audio:} Current platforms handle Indian languages by bolting translation wrappers onto English models, inflating latency past 1500ms and corrupting code-switched Hindi-English (Hinglish) phonemes.
+    \item \textbf{High SaaS Cost Barriers for Indian MSMEs:} US-based voice platforms bill at prohibitive rates of \$0.05 to \$0.15 per conversation minute, making automated voice deployment financially inaccessible for Indian enterprises.
+\end{itemize}
+
+% ==============================================================================
+% 3. LITERATURE REVIEW / EXISTING SYSTEMS
+% ==============================================================================
+\section{LITERATURE REVIEW / EXISTING SYSTEMS}
+The theoretical architecture of VoCall's intent, emotion, and memory subsystems is grounded in recent peer-reviewed research in conversational AI. IntentionESC (Zhang et al., Findings of ACL 2025) demonstrates that explicitly modeling a speaker's conversational intention prior to generating surface text significantly elevates emotional support quality -- a principle VoCall formalizes in its Intention-Centric Chain-of-Thought (VA-ICECoT) protocol. JX4MEI (Huang et al., Findings of ACL 2026) proves that cross-attention between acoustic prosody and linguistic features outperforms late decision voting, directly motivating VoCall's Dual-Signal Emotion Fusion Engine.
+
+Speaking with Intent in LLMs (Yin et al., INLG 2025) establishes that hidden meta-thought planning tokens prevent hallucinated goals during live generation. The MC-EIU benchmark (Liu et al., 2024) and AffectMind (Yu et al., 2025) validate that emotion-intent transitions follow structured distributions and that grounding memory retrieval in affective coordinates improves relevance. In memory systems, MemGPT (Packer et al., 2023) pioneered virtual memory paging for LLMs, but its paging queries introduce latencies exceeding 1000ms. Zep (2024) demonstrates temporal graph persistence for entity relationships, which VoCall extends with sub-40ms OpenCypher graph traversals on FalkorDB.
+
+Commercially available systems (Vapi, Retell AI, OmniDim, Unpod) rely on static prompt trees, lack acoustic paralinguistics, provide no native Hinglish models, and operate as closed SaaS. VoCall differentiates itself as an open-source, full-duplex platform combining 4-tier memory fan-out, live acoustic emotion sensing, and native code-switching on free-tier infrastructure.
+
+% ==============================================================================
+% 4. OBJECTIVES OF THE PROJECT
+% ==============================================================================
+\section{OBJECTIVES OF THE PROJECT}
+\begin{enumerate}
+    \item To design and implement a 4-Tier Hybrid Cognitive Memory Architecture unifying working memory (Upstash Redis), semantic facts (Supabase pgvector), episodic history (Postgres), and knowledge graph (FalkorDB), queried concurrently in under 80ms via \texttt{asyncio.gather}.
+    \item To design a Dual-Signal Multimodal Emotion Fusion Engine combining Hume AI acoustic prosody (48 paralinguistic dimensions) and Groq text sentiment onto Russell's Circumplex plane (60/40 convex combination) to detect caller frustration mid-turn.
+    \item To implement a VA-ICECoT (Voice Agent Intention-Centric Chain-of-Thought) intent engine capable of 4-step reasoning (observation, cause, intent, goal) with deterministic escalation overrides when frustration exceeds 0.65.
+    \item To deploy a native code-switched Hinglish speech pipeline integrating Sarvam AI's Saarika v2 STT and Bulbul v2 TTS to process mixed Hindi-English speech without artificial translation wrappers.
+    \item To achieve a deterministic end-to-end voice turn latency budget of 495ms (observed P95 $<$ 530ms) across speech-to-text, memory retrieval, emotion fusion, LLM inference, and audio synthesis.
+    \item To implement an atomic, DPDP Act 2023-compliant ``Forget Me'' cascading deletion protocol that purges contact records across all four storage tiers and generates a SHA-256 cryptographic compliance receipt.
+    \item To validate joint reasoning accuracy using the Joint Recognition Balance Metric (JRBM) and provide an in-browser WebRTC testing studio for real-time validation without physical telephony hardware.
+\end{enumerate}
+
+% ==============================================================================
+% 5. PROPOSED SYSTEM
+% ==============================================================================
+\section{PROPOSED SYSTEM}
+VoCall proposes an integrated, five-layer voice AI platform in which a caller's speech is transcribed, understood, affectively appraised, and responded to in real time while simultaneously grounded in cross-session memory. Incoming audio frames of 20--40ms are ingested via WebRTC or PSTN telephony trunks. At call onset, the platform executes an asynchronous parallel fan-out across all four memory tiers -- Redis buffer, pgvector semantic facts, Postgres episodic summaries, and the FalkorDB knowledge graph -- completing memory retrieval within an 80ms budget.
+
+On every conversational turn, the caller's audio is concurrently analyzed for paralinguistic acoustic cues via Hume AI and transcribed into text for sentiment analysis. The two signals are fused into a continuous Valence-Arousal coordinate on Russell's Circumplex plane. This fused emotional state, along with the VA-ICECoT intent classification and slot values, is dynamically injected into the system prompt sent to Groq LPU's LLaMA-3.3-70B model. When caller frustration crosses 0.65, the agent automatically modulates its speech cadence, softens phrasing, or triggers deterministic supervisor escalation.
+
+Post-call, an asynchronous 11-stage background worker on Trigger.dev extracts new facts, updates the FalkorDB entity graph, records emotional trajectories, and dispatches external connectors (WhatsApp confirmation, CRM logging) -- ensuring that newly learned context is immediately available for subsequent calls.
+
+% ==============================================================================
+% 6. SYSTEM ARCHITECTURE
+% ==============================================================================
+\section{SYSTEM ARCHITECTURE}
+VoCall is structured into five decoupled operational layers to ensure deterministic latency, high availability, and modular scalability:
+
+\subsection{Tier 1 -- Client and Presentation Layer}
+Comprises the interactive Vite 8 and React 19 testing application and the enterprise Next.js 14 (App Router) dashboard. It provides developers with agent configuration panels, contact inspection views, post-call analytics, and the in-browser WebCallModal for real-time testing.
+
+\subsection{Tier 2 -- API Gateway and Routing Layer}
+A FastAPI-based ASGI backend exposes REST endpoints for authentication, contact management, memory routing, and telephony webhooks, coupled with a Server-Sent Events (SSE) telemetry stream. It includes an AES-256-GCM vault for Bring-Your-Own-Key (BYOK) credential encryption.
+
+\subsection{Tier 3 -- Real-Time Conversational Media Pipeline}
+A Pipecat-orchestrated audio engine manages streaming audio ingestion, Silero Voice Activity Detection (VAD), parallel STT and emotion extraction, VA-ICECoT reasoning, and TTS streaming egress over LiveKit WebRTC or Twilio/Exotel/Plivo telephony SIP trunks.
+
+\subsection{Tier 4 -- Multi-Tier Cognitive Memory and Storage Layer}
+Four distinct storage engines operate concurrently: Upstash Redis for ephemeral in-call state, Supabase Postgres 15 for relational data, Supabase pgvector with HNSW cosine indexing for semantic facts, and FalkorDB for the associative entity knowledge graph.
+
+\subsection{Tier 5 -- Asynchronous Worker Layer}
+An asynchronous Trigger.dev v3 background worker executes the 11-stage post-call pipeline, handling conversation summarization, semantic fact embedding, OpenCypher graph updates, and third-party connector dispatch without blocking audio paths.
+
+% ==============================================================================
+% 7. TECHNOLOGY STACK
+% ==============================================================================
+\section{TECHNOLOGY STACK}
+\begin{itemize}
+    \item \textbf{Interactive Frontend:} Vite 8, React 19, Tailwind CSS, Lucide Icons, Framer Motion 12, Recharts
+    \item \textbf{Enterprise Dashboard:} Next.js 14 (App Router), React 18, Radix UI, Trigger.dev SDK
+    \item \textbf{Backend API:} Python 3.10+, FastAPI, Uvicorn, Pydantic v2, Asyncio
+    \item \textbf{Real-Time Media Engine:} Pipecat AI Framework, LiveKit Cloud WebRTC Server, Silero VAD
+    \item \textbf{LLM Engine:} Groq LPU (LLaMA-3.3-70B-Versatile, 14,400 req/day free tier), Cerebras AI fallback
+    \item \textbf{Speech-to-Text:} Groq Whisper Large-v3 (English), Sarvam AI Saarika v2 (Hindi / Hinglish)
+    \item \textbf{Text-to-Speech:} Cartesia Sonic-2 (ultra-low latency), Sarvam Bulbul v2, Hume AI Octave 2
+    \item \textbf{Emotion Engine:} Hume AI Expression Measurement API (48 audio prosody dims) \& Groq NLP
+    \item \textbf{Databases:} Supabase Postgres 15 with pgvector (500 MB free), Upstash Redis, FalkorDB
+    \item \textbf{Action Connectors:} WhatsApp Cloud API, Google Calendar, HubSpot, Salesforce, Slack, SQL
+    \item \textbf{Security \& Compliance:} AES-256-GCM BYOK credential encryption, DPDP Act 2023 cascading purge
+    \item \textbf{Telephony Providers:} Twilio, Exotel, Plivo (Bring-Your-Own-Key SIP trunking)
+\end{itemize}
+
+% ==============================================================================
+% 8. CORE MODULES AND FUNCTIONAL DESCRIPTION
+% ==============================================================================
+\section{CORE MODULES AND FUNCTIONAL DESCRIPTION}
+
+\subsection{4-Tier Hybrid Cognitive Memory Engine}
+The memory engine unifies four distinct storage layers to resolve conversational amnesia within an 80ms parallel budget:
+\begin{itemize}
+    \item \textbf{Tier 1 -- Working Memory (Upstash Redis):} Holds the active call's turn buffer, rolling emotion moving averages, and carried-forward slot values ($<$10ms REST latency).
+    \item \textbf{Tier 2 -- Long-Term Semantic Memory (pgvector):} Stores 1536-dimensional fact embeddings per contact, returning the top-5 facts above a 0.75 cosine similarity threshold using an HNSW index ($<$35ms).
+    \item \textbf{Tier 3 -- Episodic Memory (Supabase Postgres):} Stores structured summaries, key topics, outcome states, and emotional trajectories across the contact's last 3 calls ($<$25ms).
+    \item \textbf{Tier 4 -- Associative Knowledge Graph (FalkorDB):} Models contacts, episodes, entities, and grievances connected by \texttt{LEADS\_TO} and \texttt{FRUSTRATED\_ABOUT} edges, answering multi-hop causal queries via OpenCypher ($<$40ms).
+\end{itemize}
+All four tiers execute in parallel using \texttt{asyncio.gather}. The combined results are synthesized into a compact memory context block injected directly into the LLM system prompt prior to generation.
+
+\subsection{Dual-Signal Emotion Fusion Engine}
+Acoustic prosody features extracted via Hume AI (48 dimensions including pitch variance, energy, and vocal tension) are mapped to Russell's Circumplex plane $(V_{\text{audio}}, A_{\text{audio}})$. Linguistic sentiment extracted via Groq LLaMA yields $(V_{\text{text}}, A_{\text{text}})$. The signals are fused using a locked 60/40 convex combination:
+\begin{align}
+    V_{\text{fused}} &= 0.60 \cdot V_{\text{audio}} + 0.40 \cdot V_{\text{text}} \\
+    A_{\text{fused}} &= 0.60 \cdot A_{\text{audio}} + 0.40 \cdot A_{\text{text}}
+\end{align}
+Dominance is selected based on acoustic confidence ($D_{\text{fused}} = D_{\text{audio}}$ if $C_{\text{audio}} > 0.60$, else $D_{\text{text}}$). A confidence gate requires $C_{\text{fused}} \ge 0.50$ before the fused state modulates LLM instructions or alters TTS synthesis cadence.
+
+\subsection{VA-ICECoT Intent Engine}
+Every caller utterance triggers a 4-step intention-centric chain-of-thought: (1) Observation of fused affective state, (2) Inferred Cause from turn context, (3) Intent Categorization (inquiry, complaint, transaction, clarification, chitchat, escalation), and (4) Conversational Goal. Multi-turn slot values (dates, service types) are preserved across turns. When the computed frustration index crosses 0.65, the system executes a deterministic emergency escalation override, routing the call to a human supervisor and bypassing automated tool execution.
+
+\subsection{Action Connector Framework}
+A central dispatcher orchestrates live and post-call actions across eight modular connectors: WhatsApp, Google Calendar, HubSpot, Salesforce, Slack, HMAC-signed custom webhooks, and parameterized read-only SQL queries. All third-party API credentials are encrypted at rest using AES-256-GCM authenticated encryption with unique cryptographic nonces.
+
+\subsection{Web Call Testing Studio}
+An in-browser WebRTC testing modal manages a 4-phase call lifecycle (idle, connecting, active, ended). It features a dynamic 3-state voice orb, an auto-scrolling live transcript stream delivered via Server-Sent Events (SSE), and a post-call decision screen allowing developers to save or discard call telemetry.
+
+\subsection{DPDP Act 2023 ``Forget Me'' Erasure Protocol}
+In compliance with India's Digital Personal Data Protection Act 2023, a single API call initiates an atomic cascading deletion across all storage engines:
+\begin{equation}
+    \text{Purge}(\text{contact\_id}) \rightarrow \{\text{DEL Redis}, \text{ DELETE pgvector}, \text{ DELETE Postgres}, \text{ DETACH DELETE FalkorDB}\}
+\end{equation}
+The operation writes an immutable SHA-256 audit record logging the timestamp and record counts without storing identifiable personal data.
+
+% ==============================================================================
+% 9. METHODOLOGY
+% ==============================================================================
+\section{METHODOLOGY}
+\begin{enumerate}
+    \item \textbf{Phase 1 (Weeks 1--6):} Architectural design, Pipecat and LiveKit audio loop configuration, and Twilio/Exotel PSTN webhook integration.
+    \item \textbf{Phase 2 (Weeks 7--12):} Implementation of 4-tier parallel memory fan-out (Redis, pgvector, Postgres, FalkorDB) and Hume + Groq 60/40 emotion fusion.
+    \item \textbf{Phase 3 (Weeks 13--18):} VA-ICECoT intent reasoning protocol, Sarvam AI native Hinglish STT/TTS routing, and action connector dispatcher.
+    \item \textbf{Phase 4 (Weeks 19--24):} Next.js dashboard development, DPDP Act 2023 cascading deletion engine, and in-browser WebRTC testing studio.
+    \item \textbf{Phase 5 (Weeks 25--28):} End-to-end turn latency benchmarking, JRBM joint evaluation, IEEE conference paper preparation, and synopsis submission.
+\end{enumerate}
+
+% ==============================================================================
+% 10. MATHEMATICAL FORMULATION
+% ==============================================================================
+\section{MATHEMATICAL FORMULATION}
+Dual-Signal Emotion Fusion on Russell's Circumplex plane combines acoustic prosody and textual sentiment:
+\begin{equation}
+    V_{\text{fused}} = 0.60 \cdot V_{\text{audio}} + 0.40 \cdot V_{\text{text}}, \quad A_{\text{fused}} = 0.60 \cdot A_{\text{audio}} + 0.40 \cdot A_{\text{text}}
+\end{equation}
+The scalar Frustration Index $F$ triggering adaptive tone softening and supervisor escalation is computed as:
+\begin{equation}
+    F = w_1 \cdot E_{\text{fused}}[\text{anger}] + w_2 \cdot E_{\text{fused}}[\text{annoyance}] + w_3 \cdot E_{\text{fused}}[\text{distress}], \quad \text{Threshold: } F \ge 0.65
+\end{equation}
+Semantic fact retrieval from pgvector uses cosine similarity between query embedding $q$ and fact embedding $f \in \mathbb{R}^{1536}$ with an HNSW index:
+\begin{equation}
+    \text{similarity}(q, f) = \frac{q \cdot f}{\|q\| \, \|f\|} \ge 0.75
+\end{equation}
+Joint accuracy is validated using the Joint Recognition Balance Metric (harmonic mean of intent and emotion micro-$F_1$):
+\begin{equation}
+    \text{JRBM} = \frac{2 \cdot F_{1,\text{intent}} \cdot F_{1,\text{emotion}}}{F_{1,\text{intent}} + F_{1,\text{emotion}}}
+\end{equation}
+
+% ==============================================================================
+% 11. TOOLS AND SOFTWARE REQUIREMENTS
+% ==============================================================================
+\section{TOOLS AND SOFTWARE REQUIREMENTS}
+
+\subsection{Hardware Requirements}
+\begin{itemize}
+    \item \textbf{Development Processor:} 6-core x86-64 CPU (Intel Core i5 11th Gen / AMD Ryzen 5 5600H minimum)
+    \item \textbf{System Memory (RAM):} 16 GB DDR4 minimum (to support concurrent Docker engines and dev servers)
+    \item \textbf{Disk Storage:} 50 GB free SSD space
+    \item \textbf{Network Bandwidth:} Broadband connection ($>$25 Mbps, $<$30ms jitter) for live WebRTC audio streams
+    \item \textbf{GPU Requirement:} None; all model inference executes remotely on Groq LPUs and cloud AI endpoints
+\end{itemize}
+
+\subsection{Software Requirements}
+\begin{itemize}
+    \item \textbf{Operating System:} Ubuntu 22.04 LTS / Windows 11 development environment
+    \item \textbf{Backend Runtime:} Python 3.10+, FastAPI, Uvicorn, Pydantic v2, Pipecat AI, LiveKit Python SDK
+    \item \textbf{Frontend Runtime:} Node.js 18+, Vite 8, React 19, Next.js 14 (App Router), Tailwind CSS
+    \item \textbf{Databases:} Supabase Postgres 15 (with pgvector), Upstash Redis (Serverless), FalkorDB
+    \item \textbf{Cloud AI \& Speech:} Groq Cloud (LLaMA-3.3-70B, Whisper large-v3), Sarvam AI, Hume AI, Cartesia
+    \item \textbf{Free-Tier Economics:} Groq (14.4k req/day), Supabase (500MB), Upstash (10k cmd/day), LiveKit (50GB)
+\end{itemize}
+
+% ==============================================================================
+% 12. EXPECTED OUTCOME
+% ==============================================================================
+\section{EXPECTED OUTCOME}
+At project completion, VoCall will deliver a fully functional, open-source voice AI platform under the MIT license. Key outcomes include:
+\begin{itemize}
+    \item \textbf{Sub-500ms Turn Latency:} Observed P95 turnaround latency under 530ms (target 495ms budget: VAD 40ms, STT 150ms, Memory/Emotion $<$50ms, LLM TTFT 150ms, TTS TTFAB 80ms, WebRTC 25ms).
+    \item \textbf{Cross-Session Contextual Continuity:} Contact-specific facts, past call episodes, and entity relationships recalled in under 80ms across multiple sessions.
+    \item \textbf{Real-Time Affective Adaptation:} In-flight tone modulation and supervisor escalation when frustration crosses 0.65.
+    \item \textbf{Native Hinglish Preservation:} Fluent code-switched Hindi-English speech without translation wrapper distortion.
+    \item \textbf{Academic Deliverables:} A complete B.Tech dissertation and an IEEE conference manuscript (\texttt{paper.pdf}) submitted for peer review.
+\end{itemize}
+
+% ==============================================================================
+% 13. APPLICATIONS
+% ==============================================================================
+\section{APPLICATIONS}
+\begin{itemize}
+    \item \textbf{Enterprise Customer Support:} Automated helpdesk routing with cross-call contextual memory, reducing handle times.
+    \item \textbf{Healthcare Appointment \& Triage:} Patient appointment scheduling and empathetic triage assistance.
+    \item \textbf{Empathetic Debt Collection:} Compliance-aware recovery conversations with real-time tone softening.
+    \item \textbf{Inbound Sales Qualification:} High-volume lead qualification with instant CRM synchronization.
+    \item \textbf{Multilingual Citizen Helplines:} Public grievance redressal in native Hindi and code-switched Hinglish.
+\end{itemize}
+
+% ==============================================================================
+% 14. FUTURE SCOPE
+% ==============================================================================
+\section{FUTURE SCOPE}
+Future extensions include: (1) Expanding native acoustic models to additional Indian regional languages (Tamil, Telugu, Bengali, Marathi); (2) Enhancing FalkorDB with automated causal-chain discovery across recurring customer complaints; (3) Edge-deployed emotion inference using lightweight quantized models to further reduce network latency; and (4) Deep bidirectional connectors for enterprise ERP platforms (SAP, Oracle) and IT ticketing suites.
+
+% ==============================================================================
+% 15. CONCLUSION
+% ==============================================================================
+\section{CONCLUSION}
+VoCall addresses the fundamental shortcomings of contemporary voice AI platforms -- high latency, cross-session amnesia, and emotional blindness -- through a unified architecture integrating a 4-tier cognitive memory fan-out, a dual-signal emotion fusion engine, and intention-centric reasoning. Grounded in peer-reviewed research (ACL 2025/2026) and paired with free-tier production infrastructure, VoCall proves that an enterprise-grade voice agent can be ultra-fast, emotionally empathetic, and capable of perpetual memory, bringing conversational voice AI significantly closer to natural human interaction.
+
+% ==============================================================================
+% 16. REFERENCES
+% ==============================================================================
+\section{REFERENCES}
+\begin{enumerate}
+    \item Y. Zhang et al., ``IntentionESC: Intention-Centered Emotional Support Conversation,'' in \textit{Findings of the Association for Computational Linguistics (ACL)}, 2025.
+    \item X. Huang et al., ``JX4MEI: Joint Multimodal Emotion-Intent Explanation via Language-Query Former,'' in \textit{Findings of the Association for Computational Linguistics (ACL)}, 2026.
+    \item K. Yin et al., ``SWI: Speaking with Intent in Large Language Models,'' in \textit{Proceedings of the International Natural Language Generation Conference (INLG)}, 2025.
+    \item Y. Liu et al., ``MC-EIU: A Multimodal Conversational Emotion and Intent Benchmark,'' \textit{arXiv:2407.02751}, 2024.
+    \item H. Yu et al., ``AffectMind: An Affective Multimodal Agent with Proactive Knowledge Grounding,'' \textit{arXiv:2511.21728}, 2025.
+    \item J. A. Russell, ``A Circumplex Model of Affect,'' \textit{Journal of Personality and Social Psychology}, vol. 39, no. 6, pp. 1161--1178, 1980.
+    \item C. Packer et al., ``MemGPT: Towards LLMs as Operating Systems,'' \textit{arXiv:2310.08560}, 2023.
+    \item Digital Personal Data Protection Act, 2023, Government of India, Gazette of India, 2023.
+\end{enumerate}
+
+\end{document}

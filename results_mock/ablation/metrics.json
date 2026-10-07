@@ -1,0 +1,322 @@
+{
+  "configurations": {
+    "no_memory": {
+      "accuracy_d1": 0.25,
+      "ci_d1": [
+        0.0625,
+        0.4375
+      ],
+      "accuracy_d2": 0.25,
+      "ci_d2": [
+        0.0,
+        0.5
+      ],
+      "recall_at_5": 0.0,
+      "ci_recall": [
+        0.0,
+        0.0
+      ],
+      "tokens_per_call": 44.3,
+      "retrieval_ms": 0.07,
+      "question_type_accuracy": {
+        "adversarial": {
+          "accuracy": 1.0,
+          "ci_95": [
+            1.0,
+            1.0
+          ]
+        },
+        "fact_recall": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "preference": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "recurring_complaint_pattern": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "temporal": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "t2_only": {
+      "accuracy_d1": 0.25,
+      "ci_d1": [
+        0.0625,
+        0.4375
+      ],
+      "accuracy_d2": 1.0,
+      "ci_d2": [
+        1.0,
+        1.0
+      ],
+      "recall_at_5": 0.0,
+      "ci_recall": [
+        0.0,
+        0.0
+      ],
+      "tokens_per_call": 92.1,
+      "retrieval_ms": 0.09,
+      "question_type_accuracy": {
+        "adversarial": {
+          "accuracy": 1.0,
+          "ci_95": [
+            1.0,
+            1.0
+          ]
+        },
+        "fact_recall": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.125,
+            0.875
+          ]
+        },
+        "preference": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "recurring_complaint_pattern": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "temporal": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.0,
+            1.0
+          ]
+        }
+      }
+    },
+    "t2_t3": {
+      "accuracy_d1": 0.25,
+      "ci_d1": [
+        0.0625,
+        0.4375
+      ],
+      "accuracy_d2": 1.0,
+      "ci_d2": [
+        1.0,
+        1.0
+      ],
+      "recall_at_5": 0.0,
+      "ci_recall": [
+        0.0,
+        0.0
+      ],
+      "tokens_per_call": 161.1,
+      "retrieval_ms": 0.08,
+      "question_type_accuracy": {
+        "adversarial": {
+          "accuracy": 1.0,
+          "ci_95": [
+            1.0,
+            1.0
+          ]
+        },
+        "fact_recall": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.125,
+            0.875
+          ]
+        },
+        "preference": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "recurring_complaint_pattern": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "temporal": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.0,
+            1.0
+          ]
+        }
+      }
+    },
+    "t2_t3_t4": {
+      "accuracy_d1": 0.375,
+      "ci_d1": [
+        0.1875,
+        0.625
+      ],
+      "accuracy_d2": 1.0,
+      "ci_d2": [
+        1.0,
+        1.0
+      ],
+      "recall_at_5": 0.0,
+      "ci_recall": [
+        0.0,
+        0.0
+      ],
+      "tokens_per_call": 341.4,
+      "retrieval_ms": 0.08,
+      "question_type_accuracy": {
+        "adversarial": {
+          "accuracy": 1.0,
+          "ci_95": [
+            1.0,
+            1.0
+          ]
+        },
+        "fact_recall": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.125,
+            0.875
+          ]
+        },
+        "preference": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "recurring_complaint_pattern": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.0,
+            1.0
+          ]
+        },
+        "temporal": {
+          "accuracy": 0.75,
+          "ci_95": [
+            0.25,
+            1.0
+          ]
+        }
+      }
+    },
+    "full": {
+      "accuracy_d1": 0.375,
+      "ci_d1": [
+        0.1875,
+        0.625
+      ],
+      "accuracy_d2": 1.0,
+      "ci_d2": [
+        1.0,
+        1.0
+      ],
+      "recall_at_5": 0.0,
+      "ci_recall": [
+        0.0,
+        0.0
+      ],
+      "tokens_per_call": 341.4,
+      "retrieval_ms": 0.08,
+      "question_type_accuracy": {
+        "adversarial": {
+          "accuracy": 1.0,
+          "ci_95": [
+            1.0,
+            1.0
+          ]
+        },
+        "fact_recall": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.125,
+            0.875
+          ]
+        },
+        "preference": {
+          "accuracy": 0.0,
+          "ci_95": [
+            0.0,
+            0.0
+          ]
+        },
+        "recurring_complaint_pattern": {
+          "accuracy": 0.5,
+          "ci_95": [
+            0.0,
+            1.0
+          ]
+        },
+        "temporal": {
+          "accuracy": 0.75,
+          "ci_95": [
+            0.25,
+            1.0
+          ]
+        }
+      }
+    }
+  },
+  "consecutive_paired_differences": {
+    "t2_only_vs_no_memory": {
+      "mean_diff": 0.25,
+      "ci_95": [
+        0.0833,
+        0.4167
+      ],
+      "p_value": 0.0
+    },
+    "t2_t3_vs_t2_only": {
+      "mean_diff": 0.0,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "p_value": 1.0
+    },
+    "t2_t3_t4_vs_t2_t3": {
+      "mean_diff": 0.0833,
+      "ci_95": [
+        0.0,
+        0.2083
+      ],
+      "p_value": 0.24
+    },
+    "full_vs_t2_t3_t4": {
+      "mean_diff": 0.0,
+      "ci_95": [
+        0.0,
+        0.0
+      ],
+      "p_value": 1.0
+    }
+  },
+  "seeds": [
+    42
+  ],
+  "total_records": 120
+}

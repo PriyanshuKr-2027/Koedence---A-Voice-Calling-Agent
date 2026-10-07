@@ -1,0 +1,591 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{balance}
+
+\definecolor{vocallpurple}{HTML}{7C3AED}
+\definecolor{vocallslate}{HTML}{1E293B}
+
+\lstset{
+    basicstyle=\fontsize{7.5pt}{9pt}\ttfamily,
+    breaklines=true,
+    breakatwhitespace=false,
+    frame=single,
+    columns=fullflexible,
+    backgroundcolor=\color{gray!5},
+    numbers=none,
+    xleftmargin=1.5mm,
+    xrightmargin=1.5mm
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=vocallpurple,
+    citecolor=vocallpurple,
+    urlcolor=vocallpurple
+}
+
+\setlength{\textfloatsep}{7pt plus 1pt minus 2pt}
+\setlength{\floatsep}{6pt plus 1pt minus 2pt}
+\setlength{\intextsep}{6pt plus 1pt minus 2pt}
+\setlength{\abovecaptionskip}{4pt plus 1pt minus 1pt}
+\setlength{\belowcaptionskip}{3pt plus 1pt minus 1pt}
+\begin{document}
+
+\title{VoCall: A Memory-Augmented Voice Calling Agent with Real-Time Emotional Awareness}
+
+\author{
+\IEEEauthorblockN{Priyanshu Kumar}
+\and
+\IEEEauthorblockN{Abhishek Singh}
+\and
+\IEEEauthorblockN{Ananya Gupta}
+\and
+\IEEEauthorblockN{Adarsh Pandey}
+}
+
+\maketitle
+
+\begin{abstract}
+Production voice agents like Vapi, Retell AI, and OmniDim treat every phone call as an isolated event. A customer calling three times about the same delivery delay must explain the problem anew each time. The agent retains no record of past commitments, no graph of discussed entities, and no sense of whether the caller was calm or upset. We introduce VoCall, an open-source voice agent platform built to eliminate cross-session amnesia. VoCall unites four core components: a four-tier memory architecture (in-call Redis, pgvector facts, Postgres call logs, and a FalkorDB graph) queried concurrently in under 80ms; a dual-signal emotion fusion engine combining Hume AI acoustic prosody with Groq LLaMA text sentiment at a fixed 0.60/0.40 weighting; a per-turn intent and slot reasoner (VA-ICECoT) that plans conversational goals before generating tokens; and a native Hinglish pipeline built on Sarvam AI's Saarika and Bulbul models rather than tacked-on translation. VoCall also includes an atomic deletion protocol compliant with India's DPDP Act 2023 that purges all four storage engines in one transaction. We present the system design, latency profiles, a feature comparison against five platforms, and an evaluation methodology based on the Joint Recognition Balance Metric.
+\end{abstract}
+
+\begin{IEEEkeywords}
+voice agents, conversational AI, persistent memory, knowledge graphs, multimodal emotion recognition, retrieval-augmented generation, Hinglish speech processing, intention reasoning, chain-of-thought
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+\subsection{Topic Overview}
+Voice agents have transitioned from rigid touch-tone IVR trees to autonomous, real-time conversational systems powered by streaming speech-to-text (STT), large language models (LLMs), and low-latency text-to-speech (TTS) synthesis. Deployed across customer support, outbound qualification, appointment scheduling, and order tracking, modern voice agents handle spoken dialogues over WebRTC and SIP telephony protocols. These systems ingest streaming audio in 20--40ms frames and target turnaround latencies below 800ms, the threshold where conversational pauses begin to feel unnatural to human callers.
+
+\subsection{Motivation}
+Despite rapid gains in linguistic fluency, production voice agents suffer from severe cross-call amnesia. Platforms such as Vapi, Retell AI, and OmniDim discard the entire conversational state the millisecond a call terminates. When an Indian consumer calls a logistics helpline multiple times in one week regarding a delayed parcel, they must restate their identity, tracking identifier, and previous interactions to a completely oblivious agent. 
+
+This amnesia compounds two additional structural challenges in the Indian contact-center environment:
+\begin{itemize}
+    \item \textbf{Code-Switched Speech (Hinglish):} Callers routinely alternate between Hindi and English within the same sentence. Commercial voice platforms either force callers into an English-only mode or run audio through cascading translation layers that distort colloquial phrases and double turnaround latency.
+    \item \textbf{Cost and Infrastructure Constraints:} Existing platforms bill in US dollars at \$0.05 to \$0.15 per conversation minute. For Indian micro-, small-, and medium-sized enterprises (MSMEs), these pricing tiers are prohibitive. A practical platform must run entirely on free-tier infrastructure.
+\end{itemize}
+
+\subsection{Previous Work}
+Prior literature has examined parts of this design space in isolation. In conversational memory, MemGPT~\cite{memgpt} proposed virtual memory hierarchies for LLM context windows, while Mem0~\cite{mem0} and Zep~\cite{zep} structured episodic facts and temporal entity graphs for text chat. In speech processing, Sarvam AI released Saarika v2 and Bulbul v2, providing acoustic models trained directly on code-switched Indian speech. In emotional reasoning, Zhang et al.'s IntentionESC~\cite{intentionesc} introduced explicit intention modeling for emotional support dialogues, Huang et al.'s JX4MEI~\cite{jx4mei} explored multimodal cross-attention between audio and text, and Yin et al.'s SWI~\cite{swi} proved that generating internal planning tokens before surface text reduces dialogue hallucinations.
+
+\subsection{Gap Finding}
+Despite these separate contributions, four major architectural gaps persist:
+\begin{enumerate}
+    \item \textbf{Single-Store Memory Failure:} Existing voice platforms either discard session state or rely on flat vector stores. Flat vector embeddings cannot perform multi-hop graph traversals (e.g., retrieving how many previous calls involved a disputed refund) or track temporal frustration trajectories across episodes.
+    \item \textbf{Unimodal or Post-Call Emotion Analysis:} Commercial platforms typically run sentiment classifiers on text transcripts after call completion. Post-call analysis cannot modify in-flight turn tone, and text-only classifiers fail on sarcasm and acoustic strain where words appear polite but pitch indicates severe anger.
+    \item \textbf{Disconnected Intent and Affective Reasoning:} No existing voice pipeline couples intent classification, slot extraction, and emotional appraisal inside a sub-500ms voice turn deadline.
+    \item \textbf{Translation Wrappers for Multilingual Audio:} Current stacks treat Indian languages by bolting translation layers onto English models, inflating turn latency past 1500ms and corrupting code-switched phonemes.
+\end{enumerate}
+
+VoCall bridges these gaps by combining a four-tier parallel memory fan-out, a dual-signal emotion fusion engine, VA-ICECoT reasoning, and native Hinglish models into an open-source platform.
+
+\section{Literature Review}
+\label{sec:literature}
+
+\subsection{Commercial Voice Agent Platforms}
+Vapi and Retell AI represent the current standard for commercial voice agent orchestration, offering low-latency STT/LLM/TTS pipelines, mid-call function execution, and post-call analytics. However, both platforms isolate memory to the active call session; cross-call history is nonexistent. OmniDim introduces sentiment analysis, but executes it as an asynchronous post-call reporting job, rendering it useless for live de-escalation. Unpod provides an open-source MIT-licensed interface with a memory toggle, but lacks an underlying vector database, episodic log, or knowledge graph. None of these platforms natively support code-switched Hinglish or bill in Indian Rupees.
+
+\subsection{Memory Systems for Conversational Agents}
+Outside telephony, several architectures have advanced long-term memory for chat. MemGPT~\cite{memgpt} manages LLM context through OS-inspired memory paging. Mem0~\cite{mem0} adds an extraction layer over a unified vector database to persist user preferences. Zep~\cite{zep} pairs vector embeddings with a temporal knowledge graph and implements GDPR-compliant erasure. However, none of these systems annotate memories with caller affective states, nor were they engineered to return context within an 80ms voice budget.
+
+\subsection{Multimodal Emotion and Intent Reasoning}
+Research in affective dialogue highlights the value of joint intent and emotion modeling. Huang et al.'s JX4MEI~\cite{jx4mei} established that cross-attending acoustic and textual features outperforms late decision-level voting. Yin et al.'s SWI~\cite{swi} confirmed that forcing intention planning prior to token generation grounds responses. Liu et al.'s MC-EIU~\cite{mceiu} demonstrated that emotion and intent transitions adhere to predictable conversational dynamics. Yu et al.'s AffectMind~\cite{affectmind} demonstrated that grounding memory retrieval in user affective states improves empathetic relevance.
+
+\subsection{Paper Findings and Structural Gaps}
+Table~\ref{tab:paperfindings} synthesizes key findings from seminal papers and identifies the specific structural gaps that VoCall resolves.
+
+\begin{table*}[t]
+\centering
+\caption{Literature Review: Paper Findings, Methodologies, and Structural Gaps}
+\label{tab:paperfindings}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}p{3.2cm} p{2.2cm} p{5.5cm} X@{}}
+\toprule
+\textbf{Paper / System} & \textbf{Domain} & \textbf{Key Paper Finding} & \textbf{Identified Gap Addressed by VoCall} \\
+\midrule
+IntentionESC~\cite{intentionesc} (ACL 2025) & Emotional Support & Explicit intention planning before response generation significantly increases support effectiveness. & Evaluated strictly on offline text chat; lacks real-time acoustic prosody and telephony deadlines. \\
+JX4MEI~\cite{jx4mei} (ACL 2026) & Multimodal EIU & Language-Query Former cross-attention between audio and text beats late decision fusion on XMEI. & Benchmark study only; does not provide a sub-500ms streaming voice pipeline or tool execution. \\
+SWI~\cite{swi} (INLG 2025) & Intent Reasoning & Hidden meta-thought planning tokens prevent hallucinated dialog goals and guide response generation. & Lacks multi-turn slot tracking, external API connector triggers, and acoustic conditioning. \\
+MC-EIU~\cite{mceiu} (2024) & Dialog Benchmark & Conversational emotion-intent transitions follow structured statistical distributions across turns. & Diagnostic benchmark; provides no runtime system or deterministic emergency escalation rules. \\
+AffectMind~\cite{affectmind} (2025) & Affective Memory & Retrieval relevance improves when memory vectors are indexed and filtered by affective coordinates. & Restricted to flat vector storage; cannot traverse multi-hop causal graphs or detect recurring pain points. \\
+MemGPT~\cite{memgpt} (2023) & Virtual Memory & OS-style paging of conversation turns enables perpetual persona consistency across chat sessions. & Paging queries introduce high latency (\textgreater{}1000ms), incompatible with live voice turn budgets. \\
+Zep~\cite{zep} (2024) & Graph Memory & Temporal knowledge graphs preserve entity relationships better than raw semantic vector retrieval. & Cloud-hosted proprietary service; lacks emotion-conditioned retrieval and native Hinglish models. \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\section{System Architecture}
+\label{sec:architecture}
+
+VoCall is organized into five tiers: a client layer (a Vite/React interactive frontend plus a Next.js enterprise dashboard), a FastAPI API layer, a real-time voice pipeline built on Pipecat and LiveKit, a four-way storage layer, and an asynchronous post-call worker running on Trigger.dev. Figure~\ref{fig:hero} shows how these fit together.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{figs/fig1_hero_architecture_drawio.pdf}
+\caption{VoCall system architecture. The client and dashboard layer talks to FastAPI over REST and Server-Sent Events; the API layer coordinates the storage tier, the voice pipeline, and the telephony providers; the post-call worker runs after the caller hangs up.}
+\label{fig:hero}
+\end{figure*}
+
+Two ingress paths feed the same downstream pipeline. A browser client opens a WebRTC session through LiveKit Cloud for in-app testing (the ``WebCall'' path); a PSTN caller comes in through Twilio, which POSTs to a webhook that returns TwiML instructing Twilio to open a bidirectional audio WebSocket. Both paths converge on the same Pipecat pipeline instance, so the memory retrieval, emotion fusion, and intent reasoning code does not need two implementations.
+
+Figure~\ref{fig:sequence} traces a single inbound call end to end: the webhook lookup, the parallel memory fan-out, the per-turn loop (STT, parallel emotion analysis, fusion, LLM generation, TTS), and the eleven-stage post-call pipeline that fires once the caller hangs up.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.80\textwidth]{figs/fig2_voice_pipeline_sequence.pdf}
+\caption{Full inbound-call sequence, from the Twilio webhook through the real-time turn loop to the eleven-stage post-call pipeline.}
+\label{fig:sequence}
+\end{figure*}
+
+Every turn in the real-time loop follows the same eight steps: audio is resampled to 16kHz PCM; the transcript comes back from Groq Whisper (English) or Sarvam Saarika (Hinglish); the acoustic and text emotion signals run in parallel and get fused; VA-ICECoT classifies intent and extracts slots; a combined rules engine checks whether the emotion-intent pair triggers an override (human handoff, for instance); the LLM generates a response conditioned on the memory block, the tone instruction, and the active tool schema; the response is synthesized through Cartesia, Sarvam Bulbul, or Hume Octave depending on language and emotion settings; and the turn is appended to the Redis buffer. We walk through the pieces that are actually new, memory, emotion, and VA-ICECoT, in the next three sections.
+
+\section{Four-Tier Cognitive Memory Architecture}
+\label{sec:memory}
+
+The core problem with a single vector store, which is what most ``AI memory'' products default to, is that it treats every kind of information the same way. A fact learned three calls ago (``prefers Hinglish''), a narrative summary of what happened last Tuesday, and a causal chain connecting a billing dispute to a refund promise are three different shapes of information, and cramming them all into one embedding space loses structure that a well-designed system could otherwise use. VoCall keeps them separate.
+
+\subsection{The Four Tiers}
+
+\textbf{Tier 1, working memory (Upstash Redis).} Keyed as \texttt{stm:\{call\_id\}}, this holds the sliding window of turn transcripts for the active call, the running emotion signal average, the currently filled VA-ICECoT slots, and any mid-call connector results. Retrieval latency is under 10ms over REST.
+
+\textbf{Tier 2, long-term semantic memory (Supabase pgvector).} Facts extracted after each call get embedded (1536-dimensional, OpenAI \texttt{text-embedding-3-small}) and stored with an HNSW cosine index. At the start of a new call, the system pulls the top five facts above a 0.75 similarity threshold:
+
+\begin{equation}
+\text{sim}(\mathbf{q}, \mathbf{f}_k) = \frac{\mathbf{q} \cdot \mathbf{f}_k}{\lVert \mathbf{q} \rVert \, \lVert \mathbf{f}_k \rVert}, \quad \text{keep if } \text{sim} > 0.75
+\label{eq:cosine}
+\end{equation}
+
+\textbf{Tier 3, episodic memory (Supabase Postgres).} A structured JSON summary of each completed call, topics discussed, entities mentioned, outcome status, and the emotional trajectory across the call (for example, \textit{frustrated} $\rightarrow$ \textit{neutral} $\rightarrow$ \textit{satisfied}). The three most recent episodes are pulled chronologically at call start.
+
+\textbf{Tier 4, knowledge graph (FalkorDB, OpenCypher).} This is the tier that does something the other three cannot: multi-hop, causal retrieval. A contact node connects to entity nodes it mentioned, topic nodes it discussed, and episode nodes representing individual calls, with \texttt{LEADS\_TO} edges chaining episodes in temporal order and \texttt{FRUSTRATED\_ABOUT} edges (with a running count) tracking recurring pain points. A query like ``what has this contact been frustrated about, and how often'' is a two-hop Cypher traversal here; it is not something a flat vector store can answer at all.
+
+\subsection{Parallel Retrieval}
+
+All four tiers are queried concurrently with \texttt{asyncio.gather}, targeting a combined budget under 80ms so the memory lookup does not become the bottleneck in the voice turn loop:
+
+\begin{lstlisting}[language=Python]
+async def retrieve_all_memory(contact_id, org_id,
+                               query_text="", config=None):
+    st, lt, ep, gr = await asyncio.gather(
+        short_term.get_call_memory(call_id),
+        long_term.retrieve_relevant_facts(
+            contact_id, org_id, query_text),
+        episodic.get_recent_episodes(
+            contact_id, org_id, limit=3),
+        graph.get_contact_graph_context(contact_id),
+        return_exceptions=True
+    )
+    return {"short_term": st, "long_term": lt,
+            "episodic": ep, "graph": gr}
+\end{lstlisting}
+
+Figure~\ref{fig:memoryc4} lays out this retrieval path as a component diagram. \texttt{return\_exceptions=True} matters here: if FalkorDB is briefly unreachable, the call proceeds with an empty graph context rather than failing outright. A voice agent that cannot start a call because a graph database timed out is worse than one that starts the call with slightly less context.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{figs/fig4_memory_fanout_c4.pdf}
+\caption{Component-level view of the four-tier parallel memory retrieval path, from inbound call trigger through the merged prompt injection block.}
+\label{fig:memoryc4}
+\end{figure*}
+
+The four results merge into a single markdown block, injected into the system prompt ahead of the LLM call. A caller who mentioned a billing dispute two calls ago and sounded frustrated both times will have that surfaced automatically, no explanation from the caller required.
+
+\subsection{DPDP Act 2023 Compliance}
+
+India's Digital Personal Data Protection Act 2023 gives individuals a right to erasure, and a memory system split across four storage engines makes that right easy to violate by accident, deleting the vector rows but leaving the graph nodes, say. VoCall wraps deletion in a single atomic operation triggered by \texttt{DELETE /api/v1/contacts/\{id\}/memory}: Redis keys are purged, the pgvector rows are deleted, the episodic rows are deleted, and the FalkorDB subgraph is removed with a \texttt{DETACH DELETE} that also drops connected frustration-event nodes. A SHA-256 audit record gets written to a compliance log with the count deleted from each tier, so an erasure request leaves a paper trail even though the personal data itself is gone.
+
+\section{Dual-Signal Emotion Fusion Engine}
+\label{sec:emotion}
+
+\subsection{Why Fuse Two Signals}
+
+Sarcasm is the easy example, someone saying ``great, just great'' in a flat, clipped tone means the opposite of what the words say, and a text-only classifier has no way to catch that. The reverse failure mode is just as real: a caller who is objectively upset (raised voice, fast speech) but is being polite in their word choice ("could you please look into this") will register as neutral to a text classifier and only show up correctly on the acoustic channel. VoCall runs both channels on every turn and combines them rather than picking one.
+
+\subsection{Fusion Formula}
+
+The acoustic signal comes from Hume AI's Expression Measurement API, which returns up to 43 paralinguistic emotion probabilities per audio chunk. These get mapped onto a two-dimensional valence-arousal plane using Russell's Circumplex Model of Affect~\cite{russell1980circumplex}, weighted by each emotion's probability score:
+
+\begin{equation}
+V_{\text{audio}} = \frac{\sum_{i=1}^{N} s_i \, v_i}{\sum_{i=1}^{N} s_i}, \qquad
+A_{\text{audio}} = \frac{\sum_{i=1}^{N} s_i \, a_i}{\sum_{i=1}^{N} s_i}
+\label{eq:circumplex}
+\end{equation}
+
+where $s_i$ is Hume's confidence score for emotion $i$ and $(v_i, a_i)$ is that emotion's fixed circumplex coordinate (anger sits at roughly $(-0.8, 0.8)$, joy at $(+0.9, 0.7)$, and so on). The text signal comes from the same-turn transcript, run through Groq's LLaMA-3.3-70B in JSON mode, which returns a valence/arousal/dominant-emotion/confidence tuple directly.
+
+The two signals are combined at a fixed, deliberately non-adaptive weighting, this is the locked hyperparameter set the rest of the platform's prompt-injection, tone-adaptation, and connector-triggering logic all key off of:
+
+\begin{align}
+V_{\text{fused}} &= 0.6\,V_{\text{audio}} + 0.4\,V_{\text{text}} \label{eq:fusev}\\
+A_{\text{fused}} &= 0.6\,A_{\text{audio}} + 0.4\,A_{\text{text}} \label{eq:fusea}\\
+D_{\text{fused}} &=
+\begin{cases}
+D_{\text{audio}} & \text{if } C_{\text{audio}} > 0.60 \\
+D_{\text{text}} & \text{otherwise}
+\end{cases} \label{eq:fused}\\
+C_{\text{fused}} &= \max(C_{\text{audio}}, C_{\text{text}}) \label{eq:fusec}
+\end{align}
+
+The 60/40 weighting is not a hyperparameter we plan to tune per deployment. We settled on it after observing that acoustic prosody is a faster and, in our informal review of pilot transcripts, more reliable indicator of genuine distress than word choice alone, and we treat it as a fixed architectural decision so that behavior stays predictable and auditable across agents. The dominant-emotion selection rule in Equation~\ref{eq:fused} defers to the acoustic channel once its own confidence clears 0.60; below that, the text channel's classification wins. A second, independent gate applies to valence specifically: the fused valence score is only treated as reliable enough to drive downstream behavior (tone injection, escalation) once the aggregate confidence reaches 0.50, which keeps a noisy, low-confidence read on a single ambiguous turn from triggering an unwarranted tone shift.
+
+Figure~\ref{fig:emotionfusion} shows the full pipeline: raw audio branches into the Hume acoustic path and, after transcription, the Groq text path; the two rejoin at the fusion layer; the fused state gets written to Redis and the \texttt{emotion\_events} table, and separately feeds three downstream consumers, tone-instruction injection, emotion-conditioned TTS, and connector-triggering.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\linewidth]{figs/fig3_emotion_fusion_methodology_drawio.pdf}
+\caption{Dual-signal emotion fusion methodology: acoustic and text channels run in parallel, converge at the fusion layer, and drive tone adaptation, TTS conditioning, and connector triggers.}
+\label{fig:emotionfusion}
+\end{figure}
+
+\subsection{Downstream Behavior}
+
+When fused valence drops below $-0.4$ and the confidence gate is satisfied, a tone instruction gets injected ahead of the LLM call: slow down, acknowledge the frustration directly, do not argue. Frustration crossing a separate, higher threshold fires an asynchronous connector, a Slack alert to a human supervisor, typically, so that escalation does not wait on the LLM to decide it is warranted. Every memory write downstream of a call also carries the fused emotion state as a tag, which is what lets Tier 2 retrieval eventually distinguish a fact learned during a calm call from one learned mid-complaint.
+
+\section{VA-ICECoT: Intent, Slot, and Emotion Reasoning}
+\label{sec:vaicecot}
+
+A voice agent needs to know two things on top of what the caller literally said: what they are trying to accomplish, and whether the emotional context changes how that goal should be pursued. VA-ICECoT handles both in a single reasoning pass adapted from the ICECoT protocol.
+
+\subsection{The Four-Step Chain}
+
+Each turn runs through: (1) observed emotional expression, drawn from the fused valence/arousal/dominant tuple; (2) inferred underlying cause, a short LLM-generated guess at why the caller feels that way given the transcript and memory context; (3) caller intent category, one of a fixed taxonomy (\textit{inquiry}, \textit{complaint}, \textit{transaction}, \textit{clarification}, \textit{chitchat}, \textit{escalation}) plus any agent-specific custom intents; and (4) target agent conversational goal, what the response needs to accomplish given the first three. Steps 1 through 4 get encoded as a hidden \texttt{<meta\_thought>} block ahead of the caller-facing text, following the meta-thought planning idea from Yin et al.~\cite{swi}: force the plan into existence before the words that carry it.
+
+\subsection{Decision Tree}
+
+Figure~\ref{fig:decisiontree} lays out the runtime control flow. Intent classification confidence below 0.70 routes to a clarification loop rather than a guess. Above that threshold, fused frustration above 0.65 routes straight to human escalation, bypassing autonomous tool execution entirely, on the reasoning that a highly frustrated caller with a clear ask should not be kept waiting on an automated confirmation step. Below the frustration threshold, the system extracts named slots and computes a constraint-satisfaction ratio $R_s = N_{\text{filled}} / N_{\text{required}}$; a connector fires automatically only once $R_s = 1.0$, and otherwise the system generates an in-context prompt asking specifically for the missing slot rather than re-asking everything.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\linewidth]{figs/fig5_va_icecot_decision_tree.pdf}
+\caption{VA-ICECoT runtime decision tree: intent confidence gating, frustration-triggered escalation bypass, and slot constraint satisfaction before autonomous connector execution.}
+\label{fig:decisiontree}
+\end{figure}
+
+\subsection{Emotion \texttimes\ Intent Combined Rules}
+
+A separate rules engine evaluates the joint condition (intent, fused emotion) against a small deterministic table before the LLM generates anything, which lets certain combinations skip LLM generation entirely. Table~\ref{tab:combinedrules} shows the shape of this table; it is deliberately small and hand-authored rather than learned, because the failure mode of a wrong escalation decision (a distressed caller not routed to a human) is expensive enough that we wanted this specific decision to be auditable line by line.
+
+\begin{table}[t]
+\centering
+\caption{Emotion $\times$ Intent Combined Rule Examples}
+\label{tab:combinedrules}
+\footnotesize
+\begin{tabularx}{\columnwidth}{@{}l p{2.7cm} X@{}}
+\toprule
+\textbf{Intent} & \textbf{Emotion Condition} & \textbf{Action} \\
+\midrule
+\texttt{request\_refund} & valence $< -0.5$ & Human handoff, immediate \\
+\texttt{speak\_to\_human} & dominant $\in$ \{\textit{angry}, \textit{frustrated}\} & Transfer, skip LLM response \\
+\texttt{book\_appointment} & valence $> 0.4$ & Confirm, no override \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Slot values persist across turns through a Redis-namespaced slot manager, which is what lets a caller interrupt mid-sentence, get transferred to a different topic, and come back to booking an appointment three turns later without the system having lost track of the date they already gave.
+
+\section{Hinglish-Native Voice Pipeline}
+\label{sec:hinglish}
+
+Most STT/TTS pipelines built for the Indian market are English models with a Hindi model bolted on next to them, and the routing logic picks one or the other per utterance. That approach breaks the moment a caller does what Indian callers actually do, switch languages mid-sentence, because the system has to guess which language the whole utterance is in before it even starts transcribing.
+
+Sarvam AI's Saarika v2 was trained natively on code-switched speech rather than treating it as a translation problem, so it preserves the mix rather than forcing a single-language decision. VoCall routes each incoming utterance through language detection (either Sarvam's own auto-detect or an explicit per-agent language setting); Hindi and Hinglish audio goes to Saarika, English audio goes to Groq Whisper large-v3. Both transcription paths converge on the same LLM call, with a system-prompt instruction to respond in whatever language mix the caller used. The response then routes back out through Sarvam's Bulbul v2 for Hindi/Hinglish output, Cartesia Sonic-2 for English, or Hume Octave 2 when emotion-conditioned synthesis is active.
+
+We compared Sarvam Saarika against Groq Whisper, OpenAI's Whisper API, AssemblyAI, Deepgram Nova-2, and Azure Speech on Hinglish accuracy specifically (Table~\ref{tab:sttcompare}). Only Sarvam handles code-switching without forcing a language choice; the rest either fail outright on mixed input or degrade badly enough that we ruled them out for this use case, latency and cost aside.
+
+\begin{table}[t]
+\centering
+\caption{STT Provider Comparison}
+\label{tab:sttcompare}
+\footnotesize
+\begin{tabularx}{\columnwidth}{@{}l c c X@{}}
+\toprule
+\textbf{Provider} & \textbf{Latency} & \textbf{Hinglish} & \textbf{Verdict} \\
+\midrule
+Groq Whisper & $\sim$150ms & Poor & English only \\
+Sarvam Saarika v2 & $\sim$200ms & Excellent & Hindi/Hinglish \\
+OpenAI Whisper API & $\sim$800ms & Poor & Rejected, latency \\
+AssemblyAI & $\sim$250ms & None & Rejected, no Hinglish \\
+Deepgram Nova-2 & $\sim$120ms & None & Rejected, no Hindi \\
+Azure Speech & $\sim$300ms & Limited & Rejected, quality \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Action Connector Framework}
+\label{sec:connectors}
+
+A voice agent that can only talk is a demo. VoCall ships eight connectors dispatched through a central registry (WhatsApp, Google Calendar, HubSpot, Salesforce, Slack, a generic HMAC-signed webhook, a read-only Postgres/Supabase SQL connector, and a tone-adapter connector that modifies the prompt and TTS parameters rather than calling an external service). Each runs in one of two modes: mid-call, invoked through LLM function calling for things like checking calendar availability, or post-call, fired asynchronously once the call ends for things like syncing a CRM record or sending a WhatsApp summary.
+
+\subsection{Dispatch and Encryption}
+
+The dispatcher itself is a keyword-to-handler registry rather than a chain of \texttt{if/elif} branches, which keeps lookup at $O(1)$ and keeps the code from turning into the kind of tangled conditional block that is painful to extend:
+
+\begin{lstlisting}[language=Python]
+CONNECTOR_REGISTRY = {
+    "google": _handle_google_cal,
+    "hubspot": _handle_hubspot,
+    "salesforce": _handle_salesforce,
+    "webhook": _handle_webhook,
+    "whatsapp": _handle_whatsapp,
+    "slack": _handle_slack,
+    "supabase": _handle_supabase,
+}
+async def fire_connector(conn_type, config, payload):
+    handler = next((fn for key, fn in
+        CONNECTOR_REGISTRY.items()
+        if key in conn_type.lower()), None)
+    if handler:
+        return await handler(config, payload)
+    return {"success": False, "error": "unknown"}
+\end{lstlisting}
+
+Credentials, OAuth tokens, API keys, webhook signing secrets, are encrypted at rest with AES-256-GCM before they touch the database: a 12-byte random nonce, a 128-bit authentication tag, base64-encoded for storage in a JSONB column. Every organization can bring its own key for nine different providers rather than sharing a platform-level key pool, which matters both for cost control and for keeping one tenant's credentials fully isolated from another's.
+
+\section{Implementation}
+\label{sec:implementation}
+
+\subsection{Technology Stack}
+
+Table~\ref{tab:stack} summarizes the stack. The guiding constraint throughout was that the entire system, LLM inference, STT, TTS, vector search, graph queries, background jobs, needed to run on services with a genuinely usable free tier, because the whole point of an India-first platform is that it has to be affordable for the businesses that need it most.
+
+\begin{table}[t]
+\centering
+\caption{Technology Stack Summary}
+\label{tab:stack}
+\footnotesize
+\begin{tabularx}{\columnwidth}{@{}l l X@{}}
+\toprule
+\textbf{Layer} & \textbf{Technology} & \textbf{Why} \\
+\midrule
+Frontend & Next.js 14 (App Router) & SSR, free Vercel tier \\
+Backend & FastAPI (Python 3.10+) & Async, Pipecat-compatible \\
+Relational DB & Supabase Postgres & RLS, Realtime, free tier \\
+Vector DB & Supabase pgvector & Co-located, no extra service \\
+Short-term & Upstash Redis & Serverless, REST, TTL \\
+Graph & FalkorDB & Redis-compatible, Cypher, free \\
+LLM (primary) & Groq Llama-3.3-70B & $\sim$400ms TTFT, free tier \\
+LLM (fallback) & Cerebras Llama-3.3-70B & 1M tokens/day free \\
+STT (EN) & Groq Whisper large-v3 & $\sim$150ms, LPU-accelerated \\
+STT (HI/Hinglish) & Sarvam Saarika v2 & Only native code-switch STT \\
+TTS (EN) & Cartesia Sonic-2 & $\sim$80ms TTFAB \\
+TTS (HI) & Sarvam Bulbul v2 & Natural Indian voices \\
+TTS (emotion) & Hume Octave 2 & Only emotion-conditioned TTS \\
+Media transport & LiveKit & Native Pipecat integration \\
+Background jobs & Trigger.dev & No timeout limits \\
+Telephony & Twilio / Plivo / Exotel & Dev vs. India-production \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Database Schema and Call Lifecycle}
+
+Fifteen Supabase tables hold the relational state, spanning organizations, agents, contacts, calls, call turns, and the three relational memory tiers (short-term fallback, long-term pgvector, episodic). Figure~\ref{fig:erschema} shows the entity-relationship structure; every table carries an \texttt{org\_id} foreign key, and Postgres row-level security enforces tenant isolation at the database layer rather than trusting application code to filter correctly on every query.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\linewidth]{figs/fig7_database_er_schema.pdf}
+\caption{Database entity-relationship schema across the fifteen core Supabase tables.}
+\label{fig:erschema}
+\end{figure}
+
+The in-browser WebCall testing modal runs through a four-phase state machine, idle, connecting, active, ended, shown in Figure~\ref{fig:statemachine}. This is deliberately separate from the PSTN telephony path: a developer testing a new agent prompt should not need a phone number or a SIP trunk to hear what the agent sounds like.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\linewidth]{figs/fig6_call_state_machine.pdf}
+\caption{Four-phase WebCall lifecycle state machine: idle, connecting, active, and ended.}
+\label{fig:statemachine}
+\end{figure}
+
+\begin{table*}[t]
+\centering
+\caption{Research Contributions Mapped to System Components and Evaluation Method}
+\label{tab:contributions}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l p{4.2cm} p{4.6cm} X@{}}
+\toprule
+\textbf{\#} & \textbf{Contribution} & \textbf{System Component} & \textbf{Evaluation Method} \\
+\midrule
+C1 & Four-tier persistent memory for voice agents & Redis + pgvector + Postgres + FalkorDB & A/B test against a no-memory baseline; context-relevance score, caller-recall rate \\
+C2 & Dual-signal real-time emotion detection & Groq NLP + Hume AI + fusion layer & Agreement rate against ground-truth labels; ablation over text-only, audio-only, fused \\
+C3 & Emotion-conditioned memory retrieval & \texttt{retriever.py} with emotion tags & Relevance comparison, tagged vs. untagged retrieval for returning callers \\
+C4 & Hinglish-native voice pipeline & Sarvam Saarika + Bulbul + LLM instruction & WER on a Hinglish test set; naturalness MOS; code-switch preservation rate \\
+C5 & Knowledge-graph memory for voice agents & FalkorDB + Cypher & Precision/recall of entity-relationship retrieval; frustration-pattern detection accuracy \\
+C6 & VA-ICECoT: joint intent, slot, and emotion reasoning & \texttt{app/services/intent/} + \texttt{va\_icecot.py} & Slot resolution accuracy ($>$95\% target); connector execution success rate \\
+Bonus & Emotion-conditioned voice synthesis & Hume Octave 2 & Caller satisfaction survey; escalation-rate comparison, adaptive vs. static TTS \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\section{Latency Budget}
+\label{sec:latency}
+
+Every millisecond in the real-time loop competes against a hard human perceptual limit: responses that take longer than roughly 800ms to start start to feel like a machine thinking, not a person talking. VoCall's turn budget targets 495ms end to end, broken down in Figure~\ref{fig:latency}: audio chunking and ingestion (roughly 40ms), STT inference (150ms), the parallel emotion-fusion and four-tier memory fan-out (both running concurrently, adding roughly 30ms combined once memory retrieval is already warm), LLM first-token generation (150ms), TTS synthesis start (80ms), and WebRTC packet transmission (25ms).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.90\linewidth]{figs/fig8_latency_waterfall.pdf}
+\caption{End-to-end voice turn latency waterfall against the 495ms budget, compared to typical industry baselines of 1200--2000ms.}
+\label{fig:latency}
+\end{figure}
+
+Table~\ref{tab:latency} lines up VoCall's per-component targets against baseline figures for comparable systems. The single biggest lever turned out to be hardware, not algorithms: Groq's LPU architecture cuts LLM first-token latency roughly in half compared to typical GPU-served inference, and that saving alone is close to the entire memory-retrieval budget.
+
+\begin{table}[t]
+\centering
+\caption{Latency Targets vs. Industry Baseline}
+\label{tab:latency}
+\footnotesize
+\begin{tabularx}{\columnwidth}{@{}X c c@{}}
+\toprule
+\textbf{Component} & \textbf{VoCall} & \textbf{Baseline} \\
+\midrule
+Full pipeline (TTFAB) & $<$800ms & 1200--2000ms \\
+STT (English) & $<$150ms & 300--500ms \\
+LLM first token & $<$400ms & 600--1500ms \\
+TTS (English) & $<$80ms & 200--400ms \\
+Memory, all 4 tiers & $<$200ms & N/A \\
+Emotion fusion & $<$200ms & N/A \\
+Post-call pipeline & $<$10s & N/A \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Evaluation Methodology}
+\label{sec:evaluation}
+
+We frame the evaluation around six specific contributions rather than a single aggregate score, because ``is this a good voice agent'' is not a claim you can actually test; ``does fusing audio and text emotion beat either signal alone'' is. Table~\ref{tab:contributions} maps each contribution to the exact system component that implements it and the method we intend to use to test it.
+
+
+
+The central evaluation metric for C2 and C6 jointly is the Joint Recognition Balance Metric, which we define as the harmonic mean of intent-classification and emotion-recognition micro-F1:
+
+\begin{equation}
+\text{JRBM} = \frac{2 \cdot F1_{\text{intent}} \cdot F1_{\text{emotion}}}{F1_{\text{intent}} + F1_{\text{emotion}}}
+\label{eq:jrbm}
+\end{equation}
+
+A harmonic mean rather than a simple average is deliberate here: a system that nails emotion recognition but guesses randomly at intent should not score well just because one number is high. We picked this formulation because it mirrors how JX4MEI~\cite{jx4mei} scores joint recognition on the XMEI dataset, which gives us a point of comparison once evaluation data is collected.
+
+The evaluation dataset itself is synthesized in three stages, following the same structure JX4MEI uses to build XMEI: an LLM generates an objective transcript description of a call, then a disentangled emotion-and-intent chain-of-thought analysis, then a ground-truth joint label pass that a human reviewer spot-checks. This is not yet run at scale; what we have is the pipeline and the metric definition, not a completed benchmark run, and we say that plainly rather than reporting numbers we do not have.
+
+\section{Comparative Analysis of Existing Methods}
+\label{sec:comparison}
+
+\begin{table*}[t]
+\centering
+\caption{Feature Comparison: VoCall vs. Existing Voice Agent Platforms}
+\label{tab:comparison}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}p{5.0cm} p{2.8cm} c c c X@{}}
+\toprule
+\textbf{Feature} & \textbf{VoCall} & \textbf{Vapi} & \textbf{Retell AI} & \textbf{OmniDim} & \textbf{Unpod} \\
+\midrule
+Persistent memory across calls & 4-tier & None & None & None & Toggle, no depth \\
+Real-time text emotion & Every turn (Groq) & No & No & Post-call only & No \\
+Real-time audio emotion & Yes (Hume) & No & No & No & No \\
+Dual-signal fusion & 60/40 weighted & No & No & No & No \\
+Knowledge-graph memory & FalkorDB & No & No & No & No \\
+Emotion-conditioned TTS & Hume Octave 2 & No & No & No & No \\
+Hinglish STT & Sarvam Saarika & No & No & No & No \\
+India telephony (Plivo/Exotel) & BYOK & Twilio only & Twilio only & No & Yes \\
+DPDP 2023 cascade delete & Cross-tier atomic & No & No & No & No \\
+Open source, self-hostable & MIT & No & No & No & MIT \\
+INR pricing & Yes & No & No & No & Yes \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+
+We conduct a multi-axis comparative analysis evaluating VoCall against commercial voice agent platforms and academic memory architectures.
+
+\subsection{Voice Platform Comparison}
+Table~\ref{tab:comparison} compares VoCall against Vapi, Retell AI, OmniDim, and Unpod across eleven critical operational capabilities. 
+
+Commercial systems (Vapi, Retell AI) excel at raw orchestration latency but treat calls as ephemeral events. When a customer disconnects, all learned entities, preferences, and grievances evaporate. OmniDim introduces sentiment tracking but defers analysis to an asynchronous post-call pipeline, making mid-call de-escalation impossible. Unpod offers an open-source MIT foundation with an intuitive agent dashboard, yet its memory toggle lacks an active backend retrieval engine. 
+
+VoCall is the only platform providing four-tier persistent memory, dual-signal emotion fusion, native Hinglish speech recognition, and atomic DPDP Act 2023 erasure, all while operating entirely on free-tier infrastructure.
+
+\subsection{Memory Architecture Comparison}
+Table~\ref{tab:memcompare} compares VoCall's four-tier storage model against Mem0, Zep, and MemGPT.
+
+\begin{table}[b]
+\centering
+\caption{Memory System Comparison}
+\label{tab:memcompare}
+\footnotesize
+\begin{tabularx}{\columnwidth}{@{}X c c c c@{}}
+\toprule
+\textbf{Dimension} & \textbf{VoCall} & \textbf{Mem0} & \textbf{Zep} & \textbf{MemGPT} \\
+\midrule
+Short-term (in-call) & Yes & No & No & Context only \\
+Long-term semantic & Yes & Yes & Yes & Yes \\
+Knowledge graph & Yes & No & Partial & No \\
+Emotion-tagged writes & Yes & No & No & No \\
+Self-hostable, free & Yes & No & Partial & Yes, GPU \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+While Mem0 and MemGPT provide effective long-term text storage, they rely on single-tier vector embeddings or prompt-paging mechanisms that introduce multi-second latencies and miss relational context. Zep provides temporal entity graphs and GDPR-compliant deletion, but lacks acoustic emotion tagging and requires proprietary hosting at scale. 
+
+VoCall unifies ephemeral in-call state (Upstash Redis), semantic fact embeddings (Supabase pgvector), structured call summaries (Postgres), and multi-hop entity-frustration graphs (FalkorDB) into a single 80ms parallel fan-out. Memory writes carry fused valence-arousal coordinates, enabling downstream retrieval to distinguish facts learned during calm interactions from those disclosed during customer distress.
+
+\balance
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+A few things are worth being upfront about. First, the 60/40 emotion fusion weighting was chosen from pilot review, not from a controlled ablation across weighting schemes; Table~\ref{tab:contributions}'s C2 evaluation plan is the mechanism by which that choice gets validated or revised, and until that ablation runs, the weighting should be read as a considered starting point rather than a proven optimum. Second, the JRBM benchmark described in Section~\ref{sec:evaluation} has a defined dataset-generation pipeline but no completed run at the time of writing; the slot-resolution accuracy target of 95\% for VA-ICECoT is a design goal, not a measured result. Third, FalkorDB's graph queries are fast in isolation (sub-10ms for the traversal patterns VoCall uses), but graph memory only becomes genuinely useful once a contact has called in more than two or three times, so cold-start behavior for new contacts leans almost entirely on Tiers 1 through 3.
+
+There is also a harder question underneath all of this: how much memory is too much? A caller who mentioned something in passing three calls ago and would rather the system had forgotten it is a real scenario, not a hypothetical one, and the DPDP erasure protocol in Section~\ref{sec:memory} gives a caller a way to demand deletion, but it does not give them a way to say ``remember less by default.'' That is a product decision as much as an engineering one, and it is not fully settled in the current design.
+
+Finally, the telephony layer's India-production path (Plivo, Exotel) depends on TRAI KYC compliance workflows that involve document upload and manual review; we have specified the flow but have not yet exercised it against a live regulatory submission, and that gap between ``specified'' and ``exercised in production'' applies to more of this system than we would like. We think it is more useful to say that clearly than to imply otherwise.
+
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+VoCall brings four things together that we have not found assembled in one system elsewhere: a four-tier memory hierarchy that fans out in parallel rather than serially, a fixed dual-signal emotion fusion formula that a caller's conversation history can actually be tagged with, an explicit VA-ICECoT reasoning chain that separates ``what does the caller feel'' from ``what does the caller want'' while still letting the two interact through a combined-rules table, and a Hinglish pipeline built on a model trained for code-switching rather than one language forced to pretend it handles two. The whole system, deliberately, runs on infrastructure with a genuinely usable free tier, because a platform that only works at US SaaS pricing is not actually solving the problem it claims to solve for the Indian market it targets.
+
+What is left is mostly the evaluation work laid out in Section~\ref{sec:evaluation}: running the JRBM benchmark against a completed XMEI-style dataset, an ablation over the fusion weighting, and a live TRAI KYC submission for the India telephony path. We would also like to look at whether the knowledge-graph tier can be pushed further, right now it stores entities, topics, and frustration events, but relationship types between entities themselves (does this billing dispute connect to that support ticket) are not yet modeled, and that is probably where the next real gain in retrieval quality is sitting.
+
+\begin{thebibliography}{00}
+\setlength{\itemsep}{1pt plus 1pt}
+
+\bibitem{intentionesc} Y. Zhang \emph{et al.}, ``IntentionESC: Intention-centered emotional support conversation,'' in \emph{Findings of the Association for Computational Linguistics: ACL 2025}, 2025.
+
+\bibitem{jx4mei} X. Huang \emph{et al.}, ``JX4MEI: Joint multimodal emotion-intent explanation via a language-query former,'' in \emph{Findings of the Association for Computational Linguistics: ACL 2026}, 2026.
+
+\bibitem{swi} K. Yin \emph{et al.}, ``SWI: Speaking with intent in large language models,'' in \emph{Proceedings of the International Natural Language Generation Conference (INLG)}, 2025.
+
+\bibitem{mceiu} Y. Liu \emph{et al.}, ``MC-EIU: A benchmark for multimodal conversational emotion and intent understanding,'' \emph{arXiv preprint arXiv:2407.02751}, 2024.
+
+\bibitem{affectmind} H. Yu \emph{et al.}, ``AffectMind: An affective multimodal agent with proactive knowledge grounding,'' \emph{arXiv preprint arXiv:2511.21728}, 2025.
+
+\bibitem{russell1980circumplex} J. A. Russell, ``A circumplex model of affect,'' \emph{Journal of Personality and Social Psychology}, vol. 39, no. 6, pp. 1161--1178, 1980.
+
+\bibitem{memgpt} C. Packer, V. Fang, S. G. Patil, K. Lin, S. Wooders, and J. E. Gonzalez, ``MemGPT: Towards LLMs as operating systems,'' \emph{arXiv preprint arXiv:2310.08560}, 2023.
+
+\bibitem{mem0} Mem0.ai, ``Mem0: The memory layer for AI applications,'' Technical documentation, \url{https://mem0.ai}, 2024.
+
+\bibitem{zep} Zep AI, ``Zep: A temporal knowledge graph architecture for agent memory,'' Technical documentation, \url{https://www.getzep.com}, 2024.
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,53 @@
+# VoCall Research Evaluation Configuration
+# References real system parameters from:
+#   app/services/memory/long_term.py (k, tau, embedding_model)
+#   app/services/memory/retriever.py (episodic_limit)
+#   app/services/emotion/fusion.py (fusion_w, tone_threshold, alert_threshold)
+#   app/services/stt.py (Sarvam Saarika v2 vs Groq Whisper large-v3)
+#   app/services/tts.py (Cartesia Sonic-2, Hume Octave 2, Sarvam Bulbul v1)
+#   app/routers/contacts.py (cascade_delete_contact_memory)
+
+# Multi-tier memory retrieval parameters
+memory:
+  k: 5
+  tau: 0.75
+  episodic_limit: 3
+
+# Emotion fusion & threshold parameters
+emotion:
+  fusion_w: 0.6
+  tone_threshold: 0.6
+  alert_threshold: 0.7
+  classes:
+    - "neutral"
+    - "calm"
+    - "happy"
+    - "sad"
+    - "angry"
+    - "frustrated"
+
+# Models used across evaluation pipelines
+models:
+  embedding_model: "nomic-embed-text-v1_5"
+  answer_model: "llama-3.3-70b-versatile"
+  judge_model: "llama-3.3-70b-versatile"
+
+# Fixed seeds for statistical reproducibility
+seeds:
+  - 0
+  - 1
+  - 2
+
+# Evaluation dataset paths
+datasets:
+  memory: "eval/data/memory_retrieval.jsonl"
+  emotion: "eval/data/emotion_dialogues.jsonl"
+  d3: "eval/data/d3/labels.csv"
+  wer: "eval/data/hinglish_stt.jsonl"
+  latency: "eval/data/turn_latency.jsonl"
+  erasure: "eval/data/erasure_verification.jsonl"
+
+# Output and caching paths
+paths:
+  results_dir: "results"
+  cache_dir: ".eval_cache"

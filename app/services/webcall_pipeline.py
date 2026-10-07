@@ -26,6 +26,14 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.services.audio import (
+    mulaw_to_pcm16,
+    resample_pcm16,
+    pcm16_to_wav,
+    VoiceActivityDetector,
+)
+from app.services.latency_stage import stage
+
 from app.core.config import settings
 from app.services.emotion import (
     analyze_text_emotion,
@@ -34,6 +42,7 @@ from app.services.emotion import (
     fuse_emotion_signals,
     get_tone_instruction,
 )
+from app.services.intent import detector, slot_manager
 from app.services.livekit_service import livekit_service
 from app.services.llm import llm_service
 from app.services.memory import short_term
@@ -45,11 +54,21 @@ from app.services.tts import synthesize_speech
 from app.services.voice_pipeline import (
     _load_agent_config,
     _load_org_api_keys,
+    get_active_pipeline_path,
     get_active_tools,
     handle_tool_call,
 )
+from app.services.turn_pipeline import (
+    assemble_turn_prompt,
+    execute_shared_turn_steps,
+    format_t2_facts,
+    select_tts_config,
+)
 
 logger = logging.getLogger(__name__)
+
+_format_t2_facts = format_t2_facts
+
 
 # Active webcall tasks: call_id -> asyncio.Task
 _active_webcall_tasks: Dict[str, asyncio.Task] = {}
@@ -197,67 +216,103 @@ async def run_webcall_agent(
     api_keys = await _load_org_api_keys(org_id)
     await short_term.init_call_memory(call_id)
 
-    # ── 4-Tier Memory Retrieval ──────────────────────────────────────────────
-    # Runs in parallel: short-term Redis, long-term pgvector, episodic summaries,
-    # FalkorDB graph context — all scoped to contact_id.
-    # If no contact_id, all tiers gracefully return empty results.
-    memory_dict = await retrieve_all_memory(
-        contact_id=contact_id,
-        org_id=org_id,
-        agent_id=agent_id,
-        query_text="",  # no query text at call start; retrieves latest facts
-        config={"call_id": call_id, "episodic_limit": 3},
-    )
-
-    memory_block = build_memory_prompt(memory_dict)
-    if memory_block:
-        # Prepend contact memory to system prompt so every turn is context-aware
-        system_prompt = f"{memory_block}\n\n{system_prompt}"
-        logger.info(
-            "Webcall %s: injected contact memory for %s (%s)",
-            call_id, contact_name, contact_id,
+    # ── Call-Start Memory Retrieval (T3 Episodic, T4 Graph) ───────────────────
+    call_start_block = ""
+    try:
+        memory_dict = await retrieve_all_memory(
+            contact_id=contact_id,
+            org_id=org_id,
+            agent_id=agent_id,
+            query_text="",  # no query text at call start; do not run T2
+            config={"call_id": call_id, "episodic_limit": 3},
+            enabled_tiers=["t3", "t4"],
         )
-    else:
-        logger.info(
-            "Webcall %s: no prior memory found for %s — fresh start",
-            call_id, contact_name,
-        )
+        call_start_block = build_memory_prompt(memory_dict)
+        if call_start_block:
+            logger.info(
+                "Webcall %s: injected contact memory (T3/T4) for %s (%s)",
+                call_id, contact_name, contact_id,
+            )
+        else:
+            logger.info(
+                "Webcall %s: no prior episodic/graph memory found for %s — fresh start",
+                call_id, contact_name,
+            )
+    except Exception as exc:
+        logger.warning("Webcall memory retrieval failed: %s", exc)
+        call_start_block = ""
     # ────────────────────────────────────────────────────────────────────────
 
     # Signal connecting
     await _push_sse_event(call_id, "status", {"state": "connecting"})
 
+    active_path = get_active_pipeline_path()
+    logger.info("Starting webcall pipeline: call_id=%s agent_id=%s path=%s", call_id, agent_id, active_path)
+    if supabase:
+        try:
+            supabase.table("calls").update({
+                "status": "in_progress",
+                "analysis": {"pipeline_path": active_path},
+            }).eq("id", call_id).execute()
+        except Exception as exc:
+            logger.warning("Failed to update webcall status to in_progress: %s", exc)
+
     try:
-        await _run_pipecat_webcall(
-            call_id=call_id,
-            room_name=room_name,
-            agent_id=agent_id,
-            org_id=org_id,
-            system_prompt=system_prompt,
-            language=language,
-            voice_config=voice_config,
-            emotion_config=emotion_config,
-            api_keys=api_keys,
-            agent=agent,
-            contact_id=contact_id,
-            contact_name=contact_name,
-        )
-    except ImportError:
-        logger.info("Pipecat not available — running minimal webcall loop")
-        await _run_minimal_webcall_loop(
-            call_id=call_id,
-            room_name=room_name,
-            agent_id=agent_id,
-            org_id=org_id,
-            system_prompt=system_prompt,
-            language=language,
-            voice_config=voice_config,
-            emotion_config=emotion_config,
-            api_keys=api_keys,
-            agent=agent,
-            contact_id=contact_id,
-            contact_name=contact_name,
-        )
+        if active_path == "pipecat":
+            logger.info("Starting Pipecat webcall path (experimental: no emotion, intent, or memory steps)")
+            try:
+                await _run_pipecat_webcall(
+                    call_id=call_id,
+                    room_name=room_name,
+                    agent_id=agent_id,
+                    org_id=org_id,
+                    system_prompt=system_prompt,
+                    language=language,
+                    voice_config=voice_config,
+                    emotion_config=emotion_config,
+                    api_keys=api_keys,
+                    agent=agent,
+                    contact_id=contact_id,
+                    contact_name=contact_name,
+                    call_start_block=call_start_block,
+                )
+            except Exception as pipecat_exc:
+                logger.warning(
+                    "Pipecat webcall raised error (%s) — falling back to custom webcall loop",
+                    pipecat_exc,
+                )
+                await _custom_webcall_loop(
+                    call_id=call_id,
+                    room_name=room_name,
+                    agent_id=agent_id,
+                    org_id=org_id,
+                    system_prompt=system_prompt,
+                    language=language,
+                    voice_config=voice_config,
+                    emotion_config=emotion_config,
+                    api_keys=api_keys,
+                    agent=agent,
+                    contact_id=contact_id,
+                    contact_name=contact_name,
+                    call_start_block=call_start_block,
+                )
+        else:
+            logger.info("Running custom webcall loop (production multi-modal loop with emotion, intent, memory)")
+            await _custom_webcall_loop(
+                call_id=call_id,
+                room_name=room_name,
+                agent_id=agent_id,
+                org_id=org_id,
+                system_prompt=system_prompt,
+                language=language,
+                voice_config=voice_config,
+                emotion_config=emotion_config,
+                api_keys=api_keys,
+                agent=agent,
+                contact_id=contact_id,
+                contact_name=contact_name,
+                call_start_block=call_start_block,
+            )
     except asyncio.CancelledError:
         logger.info("Webcall pipeline cancelled: call_id=%s", call_id)
     except Exception as exc:
@@ -283,6 +338,7 @@ async def _run_pipecat_webcall(
     agent: Dict[str, Any],
     contact_id: Optional[str] = None,
     contact_name: str = "Caller",
+    call_start_block: str = "",
 ) -> None:
     """
     Uses Pipecat's LiveKitTransport for full-duplex audio with the browser.
@@ -318,11 +374,13 @@ async def _run_pipecat_webcall(
         model="llama-3.3-70b-versatile",
     )
 
+    initial_prompt = f"{call_start_block}\n\n{system_prompt}" if call_start_block else system_prompt
+
     user_aggregator = LLMUserResponseAggregator(
-        messages=[{"role": "system", "content": system_prompt}]
+        messages=[{"role": "system", "content": initial_prompt}]
     )
     assistant_aggregator = LLMAssistantResponseAggregator(
-        messages=[{"role": "system", "content": system_prompt}]
+        messages=[{"role": "system", "content": initial_prompt}]
     )
 
     pipeline = Pipeline(
@@ -356,10 +414,10 @@ async def _run_pipecat_webcall(
 
 
 # ---------------------------------------------------------------------------
-# Minimal loop (fallback when Pipecat is unavailable)
+# Custom webcall loop (production multi-modal loop)
 # ---------------------------------------------------------------------------
 
-async def _run_minimal_webcall_loop(
+async def _custom_webcall_loop(
     call_id: str,
     room_name: str,
     agent_id: str,
@@ -372,22 +430,20 @@ async def _run_minimal_webcall_loop(
     agent: Dict[str, Any],
     contact_id: Optional[str] = None,
     contact_name: str = "Caller",
+    call_start_block: str = "",
 ) -> None:
     """
-    Minimal poll loop listening for DataPacket messages from the browser
-    that contain base64-encoded audio chunks. This is the fallback when
-    Pipecat's LiveKitTransport is not available.
-
-    Browser sends: { "type": "audio_chunk", "payload": "<base64>" }
-    Agent publishes TTS audio via DataPacket back to room.
+    Custom LiveKit audio loop with multi-modal parallel fan-out
+    (emotion, intent, memory), tone adaptation, and active tool execution.
     """
     if not livekit_service.is_configured():
-        logger.warning("LiveKit not configured — webcall minimal loop cannot run")
+        logger.warning("LiveKit not configured — webcall custom loop cannot run")
         return
 
     await _push_sse_event(call_id, "status", {"state": "active"})
 
-    conversation: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+    initial_prompt = f"{call_start_block}\n\n{system_prompt}" if call_start_block else system_prompt
+    conversation: List[Dict[str, Any]] = [{"role": "system", "content": initial_prompt}]
     groq_key = api_keys.get("groq") or settings.GROQ_API_KEY
     hume_key = api_keys.get("hume") or api_keys.get("hume_api_key")
 
@@ -396,133 +452,154 @@ async def _run_minimal_webcall_loop(
 
         lk_room = lk_rtc.Room()
         agent_token = livekit_service.generate_agent_token(room_name, agent_id)
+        turn_idx = 0
+        vad = VoiceActivityDetector(
+            sample_rate=16000,
+            frame_duration_ms=20,
+            energy_threshold=getattr(settings, "VAD_ENERGY_THRESHOLD", 400.0),
+            silence_duration_ms=getattr(settings, "VAD_SILENCE_MS", 700),
+        )
 
         async def on_data_received(data: bytes, participant):
-            nonlocal conversation
+            nonlocal conversation, turn_idx
             try:
                 msg = json.loads(data.decode())
             except Exception:
                 return
 
-            if msg.get("type") != "audio_chunk":
-                return
-
-            audio_b64 = msg.get("payload", "")
-            if not audio_b64:
-                return
-
-            audio_bytes = base64.b64decode(audio_b64)
-
-            # 1. STT
-            transcript = await transcribe_audio(audio_bytes, language, api_keys)
-            if not transcript:
-                return
-
-            ts = int(time.time() * 1000)
-
-            # 2. Emotion
-            text_emotion, audio_emotion = await asyncio.gather(
-                analyze_text_emotion(transcript, groq_key),
-                analyze_audio_emotion(audio_bytes, hume_key),
-                return_exceptions=True,
-            )
-            if isinstance(text_emotion, Exception):
-                text_emotion = None
-            if isinstance(audio_emotion, Exception):
-                audio_emotion = None
-
-            if text_emotion:
-                text_emotion["signal_source"] = "text"
-                text_emotion["timestamp_ms"] = ts
-                await short_term.append_emotion_event(call_id, text_emotion)
-
-            if audio_emotion:
-                audio_emotion["signal_source"] = "audio"
-                audio_emotion["timestamp_ms"] = ts
-                await short_term.append_emotion_event(call_id, audio_emotion)
-
-            fused_emotion = fuse_emotion_signals(text_emotion, audio_emotion)
-
-            # Save caller turn
-            await short_term.append_turn(call_id=call_id, role="user", content=transcript, emotion_state=fused_emotion)
-            conversation.append({"role": "user", "content": transcript})
-
-            # Emit transcript SSE event
-            await _push_sse_event(call_id, "transcript", {
-                "speaker": "user",
-                "text": transcript,
-                "timestamp": ts,
-            })
-
-            # Tone adaptation
-            instruction = get_tone_instruction(fused_emotion, emotion_config)
-            turn_prompt = f"{instruction}\n\n{system_prompt}" if instruction else system_prompt
-
-            # 3. LLM
-            active_tools = await get_active_tools(org_id, agent_id)
-            llm_kwargs = {"tools": active_tools} if active_tools else {}
-            try:
-                llm_res = await llm_service.generate(
-                    prompt=turn_prompt,
-                    messages=conversation[1:],
-                    api_keys=api_keys,
-                    **llm_kwargs,
-                )
-            except Exception as llm_exc:
-                logger.error("LLM error in webcall: %s", llm_exc)
-                llm_res = "I'm sorry, I'm having trouble responding right now."
-
-            reply = ""
-            tool_calls = None
-            if isinstance(llm_res, dict):
-                reply = llm_res.get("content") or ""
-                asyncio.create_task(
-                    fire_threshold_connectors(
-                        org_id=org_id,
-                        agent_id=agent_id,
-                        call_id=call_id,
-                        emotion_state=fused_emotion,
-                        contact={"name": contact_name, "phone": "web-call"},
-                        agent=agent,
-                        last_transcript_line=transcript,
-                    )
-                )
-                tool_calls = llm_res.get("tool_calls")
+            if msg.get("type") == "audio_end":
+                utterance_pcm = vad.flush()
+            elif msg.get("type") == "audio_chunk":
+                audio_b64 = msg.get("payload", "")
+                if not audio_b64:
+                    return
+                raw_chunk = base64.b64decode(audio_b64)
+                pcm_chunk = raw_chunk[44:] if (len(raw_chunk) >= 44 and raw_chunk[:4] == b"RIFF") else raw_chunk
+                utterance_pcm = vad.process_frame(pcm_chunk)
             else:
-                reply = str(llm_res or "")
+                return
 
-            # 4. Tool execution
-            if tool_calls:
-                for tc in tool_calls:
-                    func = tc.get("function", {})
-                    t_name = func.get("name", "")
-                    t_args_raw = func.get("arguments", {})
-                    t_args = json.loads(t_args_raw) if isinstance(t_args_raw, str) else (t_args_raw or {})
-                    conversation.append({"role": "assistant", "content": reply, "tool_calls": [tc]})
-                    tool_result_str = await handle_tool_call(t_name, t_args, org_id, agent_id)
-                    conversation.append({"role": "tool", "tool_call_id": tc.get("id", "call_1"), "name": t_name, "content": tool_result_str})
+            if not utterance_pcm:
+                return
+
+            turn_idx += 1
+
+            with stage("turn_total", call_id, turn_idx):
+                wav_bytes = pcm16_to_wav(utterance_pcm, sample_rate=16000, num_channels=1)
+
+                # 1. STT Stage
+                with stage("stt", call_id, turn_idx):
+                    transcript = await transcribe_audio(wav_bytes, language, api_keys)
+                if not transcript:
+                    return
+
+                # 2. Shared Multi-Modal Turn Steps (Emotion, Intent, Memory, Tone, Prompt, TTS config)
+                shared = await execute_shared_turn_steps(
+                    call_id=call_id,
+                    turn_idx=turn_idx,
+                    transcript=transcript,
+                    wav_bytes=wav_bytes,
+                    agent=agent or {},
+                    org_id=org_id,
+                    agent_id=agent_id,
+                    contact_id=contact_id,
+                    api_keys=api_keys,
+                    system_prompt=system_prompt,
+                    call_start_block=call_start_block,
+                    contact_name=contact_name,
+                    language=language,
+                    _retrieve_all_memory=retrieve_all_memory,
+                    _analyze_text_emotion=analyze_text_emotion,
+                    _analyze_audio_emotion=analyze_audio_emotion,
+                )
+                fused_emotion = shared["fused_emotion"]
+                text_emotion = shared["text_emotion"]
+                audio_emotion = shared["audio_emotion"]
+                active_tools = shared["active_tools"]
+                turn_prompt = shared["turn_prompt"]
+                tts_config = shared["tts_config"]
+
+                # Emit transcript SSE event
+                ts = int(time.time() * 1000)
+                conversation.append({"role": "user", "content": transcript})
+                await _push_sse_event(call_id, "transcript", {
+                    "speaker": "user",
+                    "text": transcript,
+                    "timestamp": ts,
+                })
+
+                # 4. LLM Generation Stage
+                llm_kwargs = {"tools": active_tools} if active_tools else {}
+                with stage("llm", call_id, turn_idx):
                     try:
-                        final_res = await llm_service.generate(prompt=turn_prompt, messages=conversation[1:], api_keys=api_keys)
-                        reply = final_res.get("content") or "" if isinstance(final_res, dict) else str(final_res or "")
-                    except Exception:
-                        reply = reply or "I completed the action."
+                        llm_res = await llm_service.generate(
+                            prompt=turn_prompt,
+                            messages=conversation[1:],
+                            api_keys=api_keys,
+                            **llm_kwargs,
+                        )
+                    except Exception as llm_exc:
+                        logger.error("LLM error in webcall: %s", llm_exc)
+                        llm_res = "I'm sorry, I'm having trouble responding right now."
 
-            conversation.append({"role": "assistant", "content": reply})
-            ts2 = int(time.time() * 1000)
-            await short_term.append_turn(call_id=call_id, role="assistant", content=reply)
+                reply = ""
+                tool_calls = None
+                if isinstance(llm_res, dict):
+                    reply = llm_res.get("content") or ""
+                    tool_calls = llm_res.get("tool_calls")
+                else:
+                    reply = str(llm_res or "")
 
-            # Emit agent transcript SSE event
-            await _push_sse_event(call_id, "transcript", {
-                "speaker": "agent",
-                "text": reply,
-                "timestamp": ts2,
-            })
+                # Tool execution
+                if tool_calls:
+                    for tc in tool_calls:
+                        func = tc.get("function", {})
+                        t_name = func.get("name", "")
+                        t_args_raw = func.get("arguments", {})
+                        t_args = json.loads(t_args_raw) if isinstance(t_args_raw, str) else (t_args_raw or {})
+                        conversation.append({"role": "assistant", "content": reply, "tool_calls": [tc]})
+                        tool_result_str = await handle_tool_call(t_name, t_args, org_id, agent_id)
+                        conversation.append({"role": "tool", "tool_call_id": tc.get("id", "call_1"), "name": t_name, "content": tool_result_str})
+                        try:
+                            final_res = await llm_service.generate(prompt=turn_prompt, messages=conversation[1:], api_keys=api_keys)
+                            reply = final_res.get("content") or "" if isinstance(final_res, dict) else str(final_res or "")
+                        except Exception:
+                            reply = reply or "I completed the action."
 
-            # 5. TTS + publish to LiveKit
-            tts_emotion = fused_emotion if emotion_config.get("emotion_conditioned_voice") and hume_key else None
-            audio_out = await synthesize_speech(reply, voice_config, api_keys, emotion_state=tts_emotion)
-            if audio_out:
-                await _publish_audio_to_livekit(room_name, audio_out, call_id)
+                conversation.append({"role": "assistant", "content": reply})
+                ts2 = int(time.time() * 1000)
+
+                # 5. Turn Append Stage (Redis)
+                with stage("append_turn", call_id, turn_idx):
+                    if text_emotion:
+                        text_emotion["signal_source"] = "text"
+                        text_emotion["timestamp_ms"] = ts
+                        await short_term.append_emotion_event(call_id, text_emotion)
+
+                    if audio_emotion:
+                        audio_emotion["signal_source"] = "audio"
+                        audio_emotion["timestamp_ms"] = ts
+                        await short_term.append_emotion_event(call_id, audio_emotion)
+
+                    await short_term.append_turn(call_id=call_id, role="user", content=transcript, emotion_state=fused_emotion)
+                    await short_term.append_turn(call_id=call_id, role="assistant", content=reply)
+
+                # Emit agent transcript SSE event
+                await _push_sse_event(call_id, "transcript", {
+                    "speaker": "agent",
+                    "text": reply,
+                    "timestamp": ts2,
+                })
+
+                # 6. TTS Speech Synthesis Stage
+                tts_emotion = fused_emotion if emotion_config.get("emotion_conditioned_voice") and hume_key else None
+                with stage("tts", call_id, turn_idx):
+                    audio_out = await synthesize_speech(reply, tts_config or voice_config, api_keys, emotion_state=tts_emotion)
+
+                # 7. Network Out Stage
+                with stage("network_out", call_id, turn_idx):
+                    if audio_out:
+                        await _publish_audio_to_livekit(room_name, audio_out, call_id)
 
         lk_room.on("data_received", on_data_received)
 
@@ -539,11 +616,15 @@ async def _run_minimal_webcall_loop(
         await stop_event.wait()
 
     except ImportError:
-        logger.error("livekit-agents SDK not available for webcall minimal loop")
+        logger.error("livekit-agents SDK not available for webcall custom loop")
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        logger.error("Minimal webcall loop error: %s", exc)
+        logger.error("Custom webcall loop error: %s", exc)
+
+
+# Backward compatibility alias
+_run_minimal_webcall_loop = _custom_webcall_loop
 
 
 # ---------------------------------------------------------------------------

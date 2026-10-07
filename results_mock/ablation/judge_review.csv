@@ -1,0 +1,11 @@
+sample_id,dataset,config,question,gold_answer,candidate_answer,judge_verdict,human_label
+caller_001,D1,t2_only,What is Pranav Kulkarni's preferred contact time window?,Weekdays after 6 PM,unknown,0,
+caller_002,D1,full,What broadband or mobile plan type is registered for Neha Pandey?,Family Home Pack 200 Mbps,unknown,0,
+locomo_02,LoCoMo,t2_t3_t4,Which city is the hotel reservation located in?,Seattle,Seattle,1,
+caller_001,D1,full,Which topic has this caller complained about most across their calls?,Delay in static IP allocation for home office server,unknown,0,
+caller_002,D1,no_memory,What did the caller ask for or report in their most recent call?,Complaint about Billing deduction for unrequested value-added service,unknown,0,
+caller_002,D1,t2_only,Which topic has this caller complained about most across their calls?,Billing deduction for unrequested value-added service,unknown,0,
+caller_002,D1,t2_t3_t4,What family-related connectivity preference did Neha Pandey note?,18th of every month,unknown,0,
+caller_002,D1,t2_t3,Which neighborhood or address area is on record for Neha Pandey?,"Indiranagar, Bengaluru",unknown,0,
+caller_002,D1,t2_t3_t4,What broadband or mobile plan type is registered for Neha Pandey?,Family Home Pack 200 Mbps,unknown,0,
+caller_001,D1,t2_only,What family-related connectivity preference did Pranav Kulkarni note?,5th of every month,unknown,0,
