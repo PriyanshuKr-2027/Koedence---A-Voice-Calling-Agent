@@ -15,6 +15,7 @@ import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 
+from app.core.config import settings
 from app.services.memory import short_term, long_term, episodic, graph
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ async def retrieve_all_memory(
         else asyncio.sleep(0, result=[])
     )
 
-    episodic_limit = config.get("episodic_limit", 3)
+    episodic_limit = config.get("episodic_limit", settings.EPISODIC_LIMIT)
     episodic_task = (
         episodic.get_recent_episodes(contact_id, org_id, limit=episodic_limit)
         if (contact_id and org_id and is_t3)

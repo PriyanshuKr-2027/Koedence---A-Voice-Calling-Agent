@@ -205,6 +205,9 @@ def test_runlog_start_run_manifest():
         assert manifest["seed"] == 42
         assert "git_commit" in manifest
         assert "python_version" in manifest
+        assert "settings_snapshot" in manifest
+        assert manifest["settings_snapshot"]["RETRIEVAL_TOP_K"] == 5
+        assert manifest["settings_snapshot"]["RETRIEVAL_TAU"] == 0.75
         assert manifest["model_names"]["embedding_model"] == "nomic-embed-text-v1_5"
 
         # Test append_jsonl and write_metrics

@@ -42,6 +42,7 @@ async def test_gen_d1_schema_and_integrity(tmp_path):
             out_dir=tmp_path,
             n_callers=2,
             seed=42,
+            cache_dir=tmp_path / "cache",
         )
 
     # 1. Check generated files exist
@@ -155,8 +156,68 @@ async def test_gen_d1_schema_and_integrity(tmp_path):
         caller_meta = next(c for c in callers if c["caller_id"] == cid)
         assert pattern_q["gold_answer"] == caller_meta["recurring_complaint"]["topic"]
 
+        # Check calls schema
+        for call in calls:
+            assert call["generator"] == "llm"
+
     # 5. Check check_d1 runner on the generated directory
     summary = run_check_d1(data_dir=tmp_path, sample_size=5)
     assert summary["n_callers"] == 2
     assert summary["total_questions"] == 16
     assert summary["question_counts"]["adversarial"] >= 2
+    assert summary["llm_conversations"] == len(calls)
+    assert summary["fallback_conversations"] == 0
+
+
+@pytest.mark.asyncio
+async def test_gen_d1_fallback_tagging_and_live_enforcement(tmp_path):
+    """Verifies that LLM failure tags conversation with 'fallback', and live mode fails unless allowed."""
+    # When LLM raises an error, fallback is used
+    with patch("app.services.llm.llm_service.generate", new=AsyncMock(side_effect=Exception("API Down"))):
+        # 1. In mock mode with fallback, should succeed and tag calls as 'fallback'
+        manifest = await generate_d1_dataset_async(
+            config_path="eval/config.yaml",
+            out_dir=tmp_path / "mock_run",
+            n_callers=1,
+            seed=42,
+            mock=True,
+            cache_dir=tmp_path / "cache_mock",
+        )
+        assert manifest["total_fallback_conversations"] > 0
+        assert manifest["total_llm_conversations"] == 0
+
+        calls_file = tmp_path / "mock_run" / "calls.jsonl"
+        with open(calls_file, "r", encoding="utf-8") as f:
+            calls = [json.loads(line) for line in f if line.strip()]
+        for call in calls:
+            assert call["generator"] == "fallback"
+
+        summary = run_check_d1(data_dir=tmp_path / "mock_run", sample_size=2)
+        assert summary["fallback_conversations"] == len(calls)
+        assert summary["llm_conversations"] == 0
+
+        # 2. In live mode without allow_fallback, should raise RuntimeError
+        with pytest.raises(RuntimeError, match="used deterministic fallback in live mode"):
+            await generate_d1_dataset_async(
+                config_path="eval/config.yaml",
+                out_dir=tmp_path / "live_fail_run",
+                n_callers=1,
+                seed=42,
+                live=True,
+                allow_fallback=False,
+                cache_dir=tmp_path / "cache_live_fail",
+            )
+
+        # 3. In live mode WITH allow_fallback=True, should succeed
+        live_manifest = await generate_d1_dataset_async(
+            config_path="eval/config.yaml",
+            out_dir=tmp_path / "live_allowed_run",
+            n_callers=1,
+            seed=42,
+            live=True,
+            allow_fallback=True,
+            cache_dir=tmp_path / "cache_live_allowed",
+        )
+        assert live_manifest["total_fallback_conversations"] > 0
+        assert live_manifest["allow_fallback"] is True
+

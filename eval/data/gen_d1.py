@@ -19,11 +19,17 @@ import json
 from pathlib import Path
 import random
 import re
+import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 import yaml
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from app.services.llm import llm_service
 from eval.common.cache import DiskCache, default_cache
+from eval.common.mode import get_eval_mode
 from eval.common.runlog import append_jsonl
 
 # ---------------------------------------------------------------------------
@@ -397,10 +403,11 @@ async def generate_call_dialogue(
     call_plan: Dict[str, Any],
     model_name: str,
     cache: DiskCache,
-) -> List[Dict[str, str]]:
+) -> Tuple[List[Dict[str, str]], str]:
     """
     Generates dialogue turns using llm_service with DiskCache.
     Falls back to deterministic rule-based dialogue if API is unavailable.
+    Returns a tuple of (turns, generator_label) where generator_label is 'llm' or 'fallback'.
     """
     sys_prompt, user_prompt = _build_llm_prompt(persona, call_plan)
     provider = "groq"
@@ -413,8 +420,14 @@ async def generate_call_dialogue(
 
     # Check disk cache
     cached = cache.get(provider, model_name, cache_payload)
-    if cached and isinstance(cached, list) and len(cached) >= 4:
-        return cached
+    if cached:
+        if isinstance(cached, dict) and "turns" in cached:
+            turns = cached["turns"]
+            gen = str(cached.get("generator", "llm"))
+            if isinstance(turns, list) and len(turns) >= 4:
+                return turns, gen
+        elif isinstance(cached, list) and len(cached) >= 4:
+            return cached, "llm"
 
     # Attempt LLM generation
     try:
@@ -427,15 +440,15 @@ async def generate_call_dialogue(
 
         turns = _parse_dialogue_json(str(raw_res))
         if turns and len(turns) >= 4:
-            cache.set(provider, model_name, cache_payload, turns)
-            return turns
+            cache.set(provider, model_name, cache_payload, {"turns": turns, "generator": "llm"})
+            return turns, "llm"
     except Exception:
         pass
 
     # Deterministic fallback
     fallback_turns = _deterministic_fallback_dialogue(persona, call_plan)
-    cache.set(provider, model_name, cache_payload, fallback_turns)
-    return fallback_turns
+    cache.set(provider, model_name, cache_payload, {"turns": fallback_turns, "generator": "fallback"})
+    return fallback_turns, "fallback"
 
 
 def _parse_dialogue_json(raw: str) -> List[Dict[str, str]]:
@@ -594,6 +607,10 @@ async def generate_d1_dataset_async(
     out_dir: Union[str, Path] = "eval/data/d1",
     n_callers: Optional[int] = None,
     seed: Optional[int] = None,
+    live: Optional[bool] = None,
+    mock: Optional[bool] = None,
+    allow_fallback: bool = False,
+    cache_dir: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Generates D1 synthetic caller history dataset."""
     cfg_path = Path(config_path)
@@ -611,9 +628,18 @@ async def generate_d1_dataset_async(
     n = n_callers if n_callers is not None else 60
     answer_model = cfg.get("models", {}).get("answer_model", "llama-3.3-70b-versatile")
 
+    # Determine execution mode (live vs mock)
+    if mock is True:
+        eval_mode = "mock"
+    elif live is True:
+        eval_mode = "live"
+    else:
+        eval_mode = get_eval_mode()
+
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-    cache = DiskCache(cfg.get("paths", {}).get("cache_dir", ".eval_cache"))
+    resolved_cache_dir = cache_dir if cache_dir is not None else cfg.get("paths", {}).get("cache_dir", ".eval_cache")
+    cache = DiskCache(resolved_cache_dir)
 
     callers_file = out_path / "callers.jsonl"
     calls_file = out_path / "calls.jsonl"
@@ -627,6 +653,8 @@ async def generate_d1_dataset_async(
     all_callers = []
     all_calls = []
     all_questions = []
+    total_fallback_count = 0
+    total_llm_count = 0
 
     for caller_idx in range(1, n + 1):
         persona = generate_persona(caller_idx, rng)
@@ -637,7 +665,12 @@ async def generate_d1_dataset_async(
         caller_calls = []
 
         for call_plan in call_plans:
-            turns = await generate_call_dialogue(persona, call_plan, answer_model, cache)
+            turns, generator_label = await generate_call_dialogue(persona, call_plan, answer_model, cache)
+            if generator_label == "fallback":
+                total_fallback_count += 1
+            else:
+                total_llm_count += 1
+
             call_record = {
                 "caller_id": persona["caller_id"],
                 "call_id": call_plan["call_id"],
@@ -646,6 +679,7 @@ async def generate_d1_dataset_async(
                 "emotion_arc": call_plan["emotion_arc"],
                 "complaint_present": call_plan["complaint_present"],
                 "mentioned_fact_ids": call_plan["mentioned_fact_ids"],
+                "generator": generator_label,
                 "turns": turns,
             }
             append_jsonl(calls_file, call_record)
@@ -664,6 +698,10 @@ async def generate_d1_dataset_async(
         "n_callers": n,
         "total_calls": len(all_calls),
         "total_questions": len(all_questions),
+        "total_llm_conversations": total_llm_count,
+        "total_fallback_conversations": total_fallback_count,
+        "mode": eval_mode,
+        "allow_fallback": allow_fallback,
         "answer_model": answer_model,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "files": {
@@ -677,6 +715,12 @@ async def generate_d1_dataset_async(
     with open(manifest_file, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
+    if eval_mode == "live" and total_fallback_count > 0 and not allow_fallback:
+        raise RuntimeError(
+            f"Dataset D1 generation failed: {total_fallback_count} conversation(s) used deterministic "
+            f"fallback in live mode. Pass --allow-fallback (or allow_fallback=True) to permit fallback generation."
+        )
+
     return manifest
 
 
@@ -685,6 +729,10 @@ def generate_d1_dataset(
     out_dir: Union[str, Path] = "eval/data/d1",
     n_callers: Optional[int] = None,
     seed: Optional[int] = None,
+    live: Optional[bool] = None,
+    mock: Optional[bool] = None,
+    allow_fallback: bool = False,
+    cache_dir: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Synchronous entry point for dataset generator."""
     return asyncio.run(
@@ -693,6 +741,10 @@ def generate_d1_dataset(
             out_dir=out_dir,
             n_callers=n_callers,
             seed=seed,
+            live=live,
+            mock=mock,
+            allow_fallback=allow_fallback,
+            cache_dir=cache_dir,
         )
     )
 
@@ -701,8 +753,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate Dataset D1 for VoCall Memory Evaluation")
     parser.add_argument("--config", default="eval/config.yaml", help="Path to config file")
     parser.add_argument("--out", default="eval/data/d1", help="Output directory for generated JSONL files")
+    parser.add_argument("--cache-dir", default=None, help="Directory for disk cache (overrides config)")
     parser.add_argument("--n-callers", type=int, default=60, help="Number of callers to generate (default 60)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed override")
+    parser.add_argument("--live", action="store_true", default=None, help="Force live mode execution")
+    parser.add_argument("--mock", action="store_true", default=False, help="Run in offline mock mode")
+    parser.add_argument("--allow-fallback", action="store_true", default=False, help="Allow fallback conversations in live mode")
     args = parser.parse_args()
 
     manifest = generate_d1_dataset(
@@ -710,9 +766,14 @@ def main() -> None:
         out_dir=args.out,
         n_callers=args.n_callers,
         seed=args.seed,
+        live=args.live,
+        mock=args.mock,
+        allow_fallback=args.allow_fallback,
+        cache_dir=args.cache_dir,
     )
     print(f"Dataset D1 generated successfully!")
     print(f"Callers: {manifest['n_callers']} | Calls: {manifest['total_calls']} | Questions: {manifest['total_questions']}")
+    print(f"Generator stats: {manifest.get('total_llm_conversations', 0)} LLM, {manifest.get('total_fallback_conversations', 0)} Fallback")
     print(f"Output files stored in {args.out}")
 
 

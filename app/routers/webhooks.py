@@ -31,21 +31,57 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _build_validation_url(request: Request) -> str:
+    """
+    Builds the URL used for Twilio webhook signature validation.
+    Reconstructs the URL from BACKEND_PUBLIC_URL or proxy headers (X-Forwarded-Proto and Host),
+    rather than internal request.url.
+    """
+    path_and_query = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+
+    public_base = (settings.BACKEND_PUBLIC_URL or "").strip().rstrip("/")
+
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}{path_and_query}"
+    elif public_base and not public_base.startswith("http://localhost"):
+        return f"{public_base}{path_and_query}"
+    elif forwarded_host:
+        scheme = forwarded_proto or request.url.scheme
+        return f"{scheme}://{forwarded_host}{path_and_query}"
+    elif public_base:
+        return f"{public_base}{path_and_query}"
+    else:
+        return f"{request.url.scheme}://{request.url.netloc}{path_and_query}"
+
+
 def _validate_twilio_signature(request: Request, body: bytes) -> bool:
     """
     Validates Twilio's X-Twilio-Signature HMAC-SHA1.
-    Skips validation in development when TWILIO_AUTH_TOKEN is not set.
+    If ENVIRONMENT=production and TWILIO_AUTH_TOKEN is unset, rejects validation immediately.
+    In development mode, skips validation only when TWILIO_AUTH_TOKEN is not set.
+    Builds the URL used for signature validation from BACKEND_PUBLIC_URL or proxy headers (X-Forwarded-Proto and Host).
     """
     auth_token = settings.TWILIO_AUTH_TOKEN
+    is_prod = settings.ENVIRONMENT.lower() == "production"
+
     if not auth_token:
+        if is_prod:
+            logger.error("TWILIO_AUTH_TOKEN not set in production — rejecting webhook signature validation")
+            return False
         logger.warning("TWILIO_AUTH_TOKEN not set — skipping signature validation (dev mode)")
         return True
 
     signature = request.headers.get("X-Twilio-Signature", "")
-    url = str(request.url)
+    if not signature:
+        logger.warning("Missing X-Twilio-Signature header on Twilio webhook request")
+        return False
 
+    url = _build_validation_url(request)
     validator = RequestValidator(auth_token)
-    # Parse form params for POST validation
+
     params: dict = {}
     try:
         params = dict(urllib.parse.parse_qsl(body.decode("utf-8")))
@@ -54,7 +90,16 @@ def _validate_twilio_signature(request: Request, body: bytes) -> bool:
 
     valid = validator.validate(url, params, signature)
     if not valid:
-        logger.warning("Invalid Twilio signature for request to %s", url)
+        # Check against BACKEND_PUBLIC_URL if url differed from proxy reconstructed url
+        public_base = (settings.BACKEND_PUBLIC_URL or "").strip().rstrip("/")
+        if public_base:
+            path_and_query = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+            alt_url = f"{public_base}{path_and_query}"
+            if alt_url != url:
+                valid = validator.validate(alt_url, params, signature)
+
+    if not valid:
+        logger.warning("Invalid Twilio signature for request to %s (signature=%s)", url, signature)
     return valid
 
 

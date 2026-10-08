@@ -37,7 +37,7 @@ async def require_authenticated_user(
                     detail="Authentication token required",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            dev_org = request.query_params.get("org_id") or "00000000-0000-0000-0000-000000000001"
+            dev_org = "00000000-0000-0000-0000-000000000001"
             return {
                 "id": "00000000-0000-0000-0000-000000000001",
                 "email": "dev@vocall.ai",

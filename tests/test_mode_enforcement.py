@@ -94,6 +94,8 @@ def test_cli_live_mode_exits_nonzero_without_keys():
         [sys.executable, str(script)],
         capture_output=True,
         text=True,
+        input="",
+        timeout=30,
         env=clean_env,
     )
     assert res.returncode != 0
@@ -198,6 +200,8 @@ def test_claims_check_cli_mock_only_stdout():
         [sys.executable, str(script), "--results-dir", str(RESULTS_ROOT), "--eval-dir", str(EVAL_ROOT)],
         capture_output=True,
         text=True,
+        input="",
+        timeout=30,
     )
     assert res.returncode == 0
     assert "Verdict:        [NO LIVE DATA]" in res.stdout

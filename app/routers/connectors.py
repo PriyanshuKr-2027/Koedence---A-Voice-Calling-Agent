@@ -17,10 +17,7 @@ from app.utils.encryption import decrypt_dict, encrypt_dict
 try:
     from app.services.supabase_client import get_supabase_client
 except ImportError:
-    try:
-        from vocall.backend.app.services.supabase_client import get_supabase_client
-    except ImportError:
-        get_supabase_client = None
+    get_supabase_client = None
 
 router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 

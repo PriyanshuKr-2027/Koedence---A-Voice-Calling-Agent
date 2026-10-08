@@ -216,7 +216,7 @@ The memory engine unifies four distinct storage layers to resolve conversational
 - *Tier 1 — Working Memory (Upstash Redis):* Holds the active call's turn buffer, rolling emotion moving averages, and carried-forward slot values (under 10ms REST latency).
 - *Tier 2 — Long-Term Semantic Memory (pgvector):* Stores 1536-dimensional fact embeddings per contact, returning the top-5 facts above a 0.75 cosine similarity threshold using an HNSW index (under 35ms).
 - *Tier 3 — Episodic Memory (Supabase Postgres):* Stores structured summaries, key topics, outcome states, and emotional trajectories across the contact's last 3 calls (under 25ms).
-- *Tier 4 — Associative Knowledge Graph (FalkorDB):* Models contacts, episodes, entities, and grievances connected by `LEADS_TO` and `FRUSTRATED_ABOUT` edges, answering multi-hop causal queries via OpenCypher (under 40ms).
+- *Tier 4 — Associative Knowledge Graph (FalkorDB):* Models contacts, episodes, entities, and grievances connected by `Contact -HAD_EPISODE-> Episode`, `LEADS_TO`, and `FRUSTRATED_ABOUT` edges, answering multi-hop causal queries via OpenCypher (under 40ms).
 
 All four tiers execute in parallel using `asyncio.gather`. The combined results are synthesized into a compact memory context block injected directly into the LLM system prompt prior to generation.
 

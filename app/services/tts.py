@@ -9,7 +9,7 @@ Routes speech synthesis requests based on voice_config:
 
 import base64
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 import httpx
 
 from app.core.config import settings
@@ -185,3 +185,80 @@ async def _synthesize_cartesia(text: str, voice_id: str, api_keys: Any) -> bytes
     except Exception as exc:
         logger.error("Cartesia Sonic-2 TTS error: %s", exc)
         return b""
+
+
+async def synthesize_speech_stream(
+    text: str,
+    voice_config: Any,
+    api_keys: Any,
+    emotion_state: Optional[Dict[str, Any]] = None,
+    chunk_size: int = 2048,
+):
+    """
+    Synthesizes speech in a streaming fashion, yielding audio frame chunks.
+    Uses Cartesia streaming endpoint or chunked output, with fallback to blocking synthesis.
+    """
+    if not text or not text.strip():
+        return
+
+    provider, voice_id = _extract_provider_and_voice(voice_config)
+
+    # Cartesia streaming path
+    if provider == "cartesia" or not (provider in ("hume", "sarvam")):
+        got_chunks = False
+        try:
+            async for chunk in _synthesize_cartesia_stream(text, voice_id, api_keys, chunk_size=chunk_size):
+                got_chunks = True
+                yield chunk
+            if got_chunks:
+                return
+        except Exception as exc:
+            logger.error("Cartesia streaming failed: %s — falling back to buffered synthesis", exc)
+
+    # Fallback to standard provider synthesis and chunk yielding
+    full_audio = await synthesize_speech(text, voice_config, api_keys, emotion_state)
+    if full_audio:
+        for i in range(0, len(full_audio), chunk_size):
+            yield full_audio[i : i + chunk_size]
+
+
+async def _synthesize_cartesia_stream(
+    text: str, voice_id: str, api_keys: Any, chunk_size: int = 2048
+):
+    """Streams audio frames from Cartesia Sonic-2 TTS."""
+    cartesia_key = _extract_key(api_keys, "cartesia", settings.CARTESIA_API_KEY)
+    if not cartesia_key:
+        logger.error("Cartesia API key not provided for streaming TTS synthesis")
+        return
+
+    try:
+        url = "https://api.cartesia.ai/tts/bytes"
+        headers = {
+            "X-API-Key": cartesia_key,
+            "Cartesia-Version": "2024-06-10",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model_id": "sonic-2",
+            "transcript": text,
+            "voice": {
+                "mode": "id",
+                "id": voice_id or "79a125e8-cd45-4c13-8a25-89665a53543c",
+            },
+            "output_format": {
+                "container": "raw",
+                "encoding": "pcm_s16le",
+                "sample_rate": 24000,
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+                    if chunk:
+                        yield chunk
+
+    except Exception as exc:
+        logger.error("Cartesia streaming TTS error: %s", exc)
+

@@ -81,10 +81,16 @@ class TestListCalls:
         assert res.status_code == 200
         assert res.json() == []
 
-    def test_list_calls_requires_org_id(self, client_no_db):
-        """TC-CALLS-LIST-02: Missing org_id → 422."""
+    def test_list_calls_derives_org_from_token_without_query_param(self, client_no_db):
+        """TC-CALLS-LIST-02: Missing org_id query param derives org from token → 200."""
         res = client_no_db.get(BASE)
-        assert res.status_code == 422
+        assert res.status_code == 200
+        assert res.json() == []
+
+    def test_list_calls_mismatched_org_query_param_raises_403(self, client_no_db):
+        """TC-CALLS-LIST-05: Mismatched org_id in query param returns 403."""
+        res = client_no_db.get(f"{BASE}?org_id=99999999-9999-9999-9999-999999999999")
+        assert res.status_code == 403
 
     def test_list_calls_with_direction_filter(self, client_no_db):
         """TC-CALLS-LIST-03: Direction filter is accepted without error."""

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 import httpx
 
 from app.core.config import settings
@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1"
-MODEL_NAME = "llama-3.3-70b-versatile"
 
 
 class LLMService:
@@ -26,12 +25,15 @@ class LLMService:
         temperature: float = 0.7,
         max_tokens: int = 512,
         tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
     ) -> Union[str, Dict[str, Any]]:
         """
         Generates a completion from the LLM for the given prompt + message history.
         If tools parameter is supplied, returns a dict with content and optional tool_calls.
         """
         api_keys = api_keys or {}
+        primary_model = model or settings.LLM_MODEL
+        fallback_model = settings.LLM_FALLBACK_MODEL or primary_model
 
         groq_key = (
             api_keys.get("groq_api_key")
@@ -44,16 +46,16 @@ class LLMService:
             or settings.CEREBRAS_API_KEY
         )
 
-        payload = self._build_payload(prompt, messages or [], temperature, max_tokens, tools)
+        payload_primary = self._build_payload(prompt, messages or [], temperature, max_tokens, tools, model=primary_model)
 
         # ---- 1. Try Groq ----
         if groq_key:
             try:
-                logger.debug("LLM: calling Groq %s", MODEL_NAME)
+                logger.debug("LLM: calling Groq %s", primary_model)
                 return await self._call_provider(
                     base_url=GROQ_BASE_URL,
                     api_key=groq_key,
-                    payload=payload,
+                    payload=payload_primary,
                     has_tools=bool(tools),
                 )
             except RateLimitError:
@@ -65,12 +67,13 @@ class LLMService:
 
         # ---- 2. Fallback: Cerebras ----
         if cerebras_key:
+            payload_fallback = self._build_payload(prompt, messages or [], temperature, max_tokens, tools, model=fallback_model)
             try:
-                logger.debug("LLM: calling Cerebras %s", MODEL_NAME)
+                logger.debug("LLM: calling Cerebras %s", fallback_model)
                 return await self._call_provider(
                     base_url=CEREBRAS_BASE_URL,
                     api_key=cerebras_key,
-                    payload=payload,
+                    payload=payload_fallback,
                     has_tools=bool(tools),
                 )
             except RateLimitError:
@@ -82,6 +85,120 @@ class LLMService:
             "No LLM API key available. Configure GROQ_API_KEY or CEREBRAS_API_KEY."
         )
 
+    async def generate_stream(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        api_keys: Optional[Dict[str, str]] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 512,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Yields tokens (content strings) as they stream from the LLM provider.
+        Tries Groq first with fallback to Cerebras.
+        """
+        api_keys = api_keys or {}
+        primary_model = model or settings.LLM_MODEL
+        fallback_model = settings.LLM_FALLBACK_MODEL or primary_model
+
+        groq_key = (
+            api_keys.get("groq_api_key")
+            or api_keys.get("groq")
+            or settings.GROQ_API_KEY
+        )
+        cerebras_key = (
+            api_keys.get("cerebras_api_key")
+            or api_keys.get("cerebras")
+            or settings.CEREBRAS_API_KEY
+        )
+
+        payload_primary = self._build_payload(
+            prompt, messages or [], temperature, max_tokens, tools, model=primary_model, stream=True
+        )
+
+        # ---- 1. Try Groq ----
+        if groq_key:
+            try:
+                logger.debug("LLM stream: calling Groq %s", primary_model)
+                got_tokens = False
+                async for token in self._call_provider_stream(
+                    base_url=GROQ_BASE_URL,
+                    api_key=groq_key,
+                    payload=payload_primary,
+                ):
+                    got_tokens = True
+                    yield token
+                if got_tokens:
+                    return
+            except RateLimitError:
+                logger.warning("Groq stream rate-limited (429) — falling back to Cerebras")
+            except Exception as exc:
+                logger.error("Groq stream request failed: %s — trying Cerebras", exc)
+        else:
+            logger.debug("Groq API key not set for streaming, trying Cerebras directly")
+
+        # ---- 2. Fallback: Cerebras ----
+        if cerebras_key:
+            payload_fallback = self._build_payload(
+                prompt, messages or [], temperature, max_tokens, tools, model=fallback_model, stream=True
+            )
+            try:
+                logger.debug("LLM stream: calling Cerebras %s", fallback_model)
+                async for token in self._call_provider_stream(
+                    base_url=CEREBRAS_BASE_URL,
+                    api_key=cerebras_key,
+                    payload=payload_fallback,
+                ):
+                    yield token
+                return
+            except RateLimitError:
+                raise RuntimeError("Both Groq and Cerebras are rate-limited. Retry later.")
+            except Exception as exc:
+                raise RuntimeError(f"Cerebras stream request failed: {exc}") from exc
+
+        raise RuntimeError(
+            "No LLM API key available for streaming. Configure GROQ_API_KEY or CEREBRAS_API_KEY."
+        )
+
+    @classmethod
+    async def _call_provider_stream(
+        cls, base_url: str, api_key: str, payload: dict
+    ) -> AsyncGenerator[str, None]:
+        """
+        Streams SSE tokens from the provider's /chat/completions endpoint.
+        """
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream("POST", url, json=payload, headers=headers) as response:
+                if response.status_code == 429:
+                    raise RateLimitError(f"Rate limit hit at {base_url}")
+                response.raise_for_status()
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            choices = chunk.get("choices", [])
+                            if choices:
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content")
+                                if content:
+                                    yield content
+                        except Exception:
+                            continue
+
     @staticmethod
     def _build_payload(
         prompt: str,
@@ -89,15 +206,17 @@ class LLMService:
         temperature: float,
         max_tokens: int,
         tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
+        stream: bool = False,
     ) -> dict:
         """Assembles the OpenAI-format request body."""
         chat_messages = [{"role": "system", "content": prompt}] + messages
         payload = {
-            "model": MODEL_NAME,
+            "model": model or settings.LLM_MODEL,
             "messages": chat_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stream": False,
+            "stream": stream,
         }
         if tools:
             payload["tools"] = tools

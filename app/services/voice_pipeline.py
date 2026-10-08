@@ -53,9 +53,44 @@ from app.services.memory.retriever import build_memory_prompt, retrieve_all_memo
 from app.services.redis_client import redis_client
 from app.services.stt import transcribe_audio
 from app.services.supabase_client import supabase
-from app.services.tts import synthesize_speech
+from app.services.tts import synthesize_speech, synthesize_speech_stream
+import re
 
 logger = logging.getLogger(__name__)
+
+SENTENCE_END_RE = re.compile(r'([.!?|।]+(?:\s+|$)|[\r\n]+)')
+
+
+def _has_sentence_end(text: str) -> bool:
+    return bool(SENTENCE_END_RE.search(text))
+
+
+def _split_first_sentence(text: str) -> tuple[str, str]:
+    match = SENTENCE_END_RE.search(text)
+    if not match:
+        return text, ""
+    end_idx = match.end()
+    first_sent = text[:end_idx].strip()
+    remainder = text[end_idx:]
+    return first_sent, remainder
+
+
+async def _send_media_to_ws(ws_connection, stream_sid: str, audio_bytes: bytes) -> None:
+    if not audio_bytes:
+        return
+    import base64
+    audio_b64_out = base64.b64encode(audio_bytes).decode()
+    response_payload = json.dumps(
+        {
+            "event": "media",
+            "streamSid": stream_sid,
+            "media": {"payload": audio_b64_out},
+        }
+    )
+    if hasattr(ws_connection, "send"):
+        await ws_connection.send({"type": "websocket.send", "text": response_payload})
+    elif hasattr(ws_connection, "send_text"):
+        await ws_connection.send_text(response_payload)
 
 
 def get_active_pipeline_path() -> str:
@@ -483,9 +518,11 @@ async def _custom_turn_loop(
     hume_key = api_keys.get("hume") or api_keys.get("hume_api_key")
     vad = VoiceActivityDetector(
         sample_rate=8000,
-        frame_duration_ms=20,
-        energy_threshold=getattr(settings, "VAD_ENERGY_THRESHOLD", 400.0),
-        silence_duration_ms=getattr(settings, "VAD_SILENCE_MS", 700),
+        frame_duration_ms=settings.VAD_FRAME_MS,
+        energy_threshold=settings.VAD_ENERGY_THRESHOLD,
+        silence_duration_ms=settings.VAD_SILENCE_MS,
+        min_utterance_ms=settings.VAD_MIN_MS,
+        max_utterance_ms=settings.VAD_MAX_MS,
     )
 
     try:
@@ -561,76 +598,173 @@ async def _custom_turn_loop(
                         conversation.append({"role": "user", "content": transcript})
                         ts = int(time.time() * 1000)
 
-                        # 3. LLM Generation Stage
+                        # 3. LLM Generation & TTS Synthesis Stage (Streaming with fallback)
                         llm_kwargs = {}
                         if active_tools:
                             llm_kwargs["tools"] = active_tools
-                            llm_kwargs["tools"] = active_tools
 
-                        with stage("llm", call_id, turn_idx):
+                        stream_sid = payload.get("streamSid", "")
+                        tts_emotion_state = (
+                            fused_emotion
+                            if emotion_config.get("emotion_conditioned_voice") and hume_key
+                            else None
+                        )
+                        streaming_succeeded = False
+                        reply = ""
+                        tool_calls = None
+
+                        # Only attempt token-level streaming if tools are not required
+                        if not active_tools:
                             try:
-                                llm_res = await llm_service.generate(
+                                t_llm = stage("llm_ttft", call_id, turn_idx)
+                                t_llm.__enter__()
+                                first_token_seen = False
+                                tokens_accumulated: List[str] = []
+                                sentence_buffer = ""
+                                first_sentence = None
+                                remaining_sentences: List[str] = []
+
+                                stream_iter = llm_service.generate_stream(
                                     prompt=turn_prompt,
                                     messages=conversation[1:],
                                     api_keys=api_keys,
-                                    **llm_kwargs,
                                 )
-                            except Exception as llm_exc:
-                                logger.error("LLM error: %s", llm_exc)
-                                llm_res = "I'm sorry, I'm having trouble responding right now."
 
-                        reply = ""
-                        tool_calls = None
-                        if isinstance(llm_res, dict):
-                            reply = llm_res.get("content") or ""
-                            tool_calls = llm_res.get("tool_calls")
-                        else:
-                            reply = str(llm_res or "")
+                                async for token in stream_iter:
+                                    if not first_token_seen:
+                                        first_token_seen = True
+                                        t_llm.__exit__(None, None, None)
+                                    tokens_accumulated.append(token)
+                                    sentence_buffer += token
 
-                        # Handle Tool Calls if generated by LLM
-                        if tool_calls:
-                            for tc in tool_calls:
-                                func = tc.get("function", {})
-                                t_name = func.get("name", "")
-                                t_args_raw = func.get("arguments", {})
-                                if isinstance(t_args_raw, str):
-                                    try:
-                                        t_args = json.loads(t_args_raw)
-                                    except Exception:
-                                        t_args = {}
-                                else:
-                                    t_args = t_args_raw or {}
+                                    if first_sentence is None and _has_sentence_end(sentence_buffer):
+                                        first_sentence, sentence_buffer = _split_first_sentence(sentence_buffer)
 
-                                conversation.append({
-                                    "role": "assistant",
-                                    "content": reply,
-                                    "tool_calls": [tc],
-                                })
+                                if not first_token_seen:
+                                    t_llm.__exit__(None, None, None)
 
-                                # Execute tool call
-                                tool_result_str = await handle_tool_call(t_name, t_args, org_id, agent_id)
+                                if first_token_seen:
+                                    if first_sentence is None:
+                                        first_sentence = sentence_buffer.strip()
+                                        sentence_buffer = ""
+                                    elif sentence_buffer.strip():
+                                        remaining_sentences.append(sentence_buffer.strip())
 
-                                conversation.append({
-                                    "role": "tool",
-                                    "tool_call_id": tc.get("id", "call_1"),
-                                    "name": t_name,
-                                    "content": tool_result_str,
-                                })
+                                    reply = "".join(tokens_accumulated).strip()
 
-                                # Make one more LLM call to get final spoken response
+                                    # Trigger streaming TTS starting at first complete sentence
+                                    if first_sentence:
+                                        t_tts = stage("tts_ttfab", call_id, turn_idx)
+                                        t_tts.__enter__()
+                                        first_audio_seen = False
+
+                                        # Synthesize first sentence
+                                        async for chunk in synthesize_speech_stream(
+                                            first_sentence,
+                                            tts_config or voice_config,
+                                            api_keys,
+                                            emotion_state=tts_emotion_state,
+                                        ):
+                                            if not first_audio_seen:
+                                                first_audio_seen = True
+                                                t_tts.__exit__(None, None, None)
+                                            await _send_media_to_ws(ws_connection, stream_sid, chunk)
+
+                                        if not first_audio_seen:
+                                            t_tts.__exit__(None, None, None)
+
+                                        # Synthesize any remaining sentences
+                                        for rem_sent in remaining_sentences:
+                                            async for chunk in synthesize_speech_stream(
+                                                rem_sent,
+                                                tts_config or voice_config,
+                                                api_keys,
+                                                emotion_state=tts_emotion_state,
+                                            ):
+                                                await _send_media_to_ws(ws_connection, stream_sid, chunk)
+
+                                        if first_audio_seen:
+                                            streaming_succeeded = True
+
+                            except Exception as stream_exc:
+                                logger.warning("Streaming pipeline error: %s — falling back to blocking path", stream_exc)
+                                streaming_succeeded = False
+
+                        # 4. Fallback: Blocking LLM + Blocking TTS path
+                        if not streaming_succeeded:
+                            with stage("llm", call_id, turn_idx):
                                 try:
-                                    final_llm_res = await llm_service.generate(
+                                    llm_res = await llm_service.generate(
                                         prompt=turn_prompt,
                                         messages=conversation[1:],
                                         api_keys=api_keys,
+                                        **llm_kwargs,
                                     )
-                                    if isinstance(final_llm_res, dict):
-                                        reply = final_llm_res.get("content") or ""
+                                except Exception as llm_exc:
+                                    logger.error("LLM error: %s", llm_exc)
+                                    llm_res = "I'm sorry, I'm having trouble responding right now."
+
+                            if isinstance(llm_res, dict):
+                                reply = llm_res.get("content") or ""
+                                tool_calls = llm_res.get("tool_calls")
+                            else:
+                                reply = str(llm_res or "")
+
+                            # Handle Tool Calls if generated by LLM
+                            if tool_calls:
+                                for tc in tool_calls:
+                                    func = tc.get("function", {})
+                                    t_name = func.get("name", "")
+                                    t_args_raw = func.get("arguments", {})
+                                    if isinstance(t_args_raw, str):
+                                        try:
+                                            t_args = json.loads(t_args_raw)
+                                        except Exception:
+                                            t_args = {}
                                     else:
-                                        reply = str(final_llm_res or "")
-                                except Exception as exc2:
-                                    logger.error("Error in post-tool LLM response: %s", exc2)
-                                    reply = reply or "I completed the action."
+                                        t_args = t_args_raw or {}
+
+                                    conversation.append({
+                                        "role": "assistant",
+                                        "content": reply,
+                                        "tool_calls": [tc],
+                                    })
+
+                                    # Execute tool call
+                                    tool_result_str = await handle_tool_call(t_name, t_args, org_id, agent_id)
+
+                                    conversation.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc.get("id", "call_1"),
+                                        "name": t_name,
+                                        "content": tool_result_str,
+                                    })
+
+                                    # Make one more LLM call to get final spoken response
+                                    try:
+                                        final_llm_res = await llm_service.generate(
+                                            prompt=turn_prompt,
+                                            messages=conversation[1:],
+                                            api_keys=api_keys,
+                                        )
+                                        if isinstance(final_llm_res, dict):
+                                            reply = final_llm_res.get("content") or ""
+                                        else:
+                                            reply = str(final_llm_res or "")
+                                    except Exception as exc2:
+                                        logger.error("Error in post-tool LLM response: %s", exc2)
+                                        reply = reply or "I completed the action."
+
+                            # Blocking TTS Speech Synthesis Stage
+                            with stage("tts", call_id, turn_idx):
+                                audio_out = await _tts_synthesize(
+                                    reply, tts_config or voice_config, api_keys, emotion_state=tts_emotion_state
+                                )
+
+                            # Network Out Stage
+                            with stage("network_out", call_id, turn_idx):
+                                if audio_out:
+                                    await _send_media_to_ws(ws_connection, stream_sid, audio_out)
 
                         conversation.append({"role": "assistant", "content": reply})
                         ts2 = int(time.time() * 1000)
@@ -649,27 +783,6 @@ async def _custom_turn_loop(
 
                             await _append_turn_to_redis(call_id, "user", transcript, ts, emotion_state=fused_emotion)
                             await _append_turn_to_redis(call_id, "assistant", reply, ts2)
-
-                        # 6. TTS Speech Synthesis Stage
-                        tts_emotion_state = fused_emotion if emotion_config.get("emotion_conditioned_voice") and hume_key else None
-                        with stage("tts", call_id, turn_idx):
-                            audio_out = await _tts_synthesize(reply, tts_config or voice_config, api_keys, emotion_state=tts_emotion_state)
-
-                        # 7. Network Out Stage
-                        with stage("network_out", call_id, turn_idx):
-                            if audio_out:
-                                audio_b64_out = base64.b64encode(audio_out).decode()
-                                response_payload = json.dumps(
-                                    {
-                                        "event": "media",
-                                        "streamSid": payload.get("streamSid", ""),
-                                        "media": {"payload": audio_b64_out},
-                                    }
-                                )
-                                if hasattr(ws_connection, "send"):
-                                    await ws_connection.send({"type": "websocket.send", "text": response_payload})
-                                elif hasattr(ws_connection, "send_text"):
-                                    await ws_connection.send_text(response_payload)
 
                 elif payload.get("event") == "stop":
                     logger.info("Twilio stream stopped for call %s", call_id)

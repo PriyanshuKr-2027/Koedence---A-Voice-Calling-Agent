@@ -189,7 +189,7 @@ Comprises the interactive Vite 8 and React 19 testing application and the enterp
 A FastAPI-based ASGI backend exposes REST endpoints for authentication, contact management, memory routing, and telephony webhooks, coupled with a Server-Sent Events (SSE) telemetry stream. It includes an AES-256-GCM vault for Bring-Your-Own-Key (BYOK) credential encryption.
 
 \subsection{Tier 3 -- Real-Time Conversational Media Pipeline}
-A Pipecat-orchestrated audio engine manages streaming audio ingestion, Silero Voice Activity Detection (VAD), parallel STT and emotion extraction, VA-ICECoT reasoning, and TTS streaming egress over LiveKit WebRTC or Twilio/Exotel/Plivo telephony SIP trunks.
+A high-throughput audio engine manages streaming audio ingestion (8\,kHz G.711 $\mu$-law telephony resampled to 16\,kHz PCM, 20\,ms frames), Voice Activity Detection (VAD: RMS threshold 400.0, 700\,ms silence timeout, 120\,ms min / 15\,s max utterance duration), parallel STT and paralinguistic emotion extraction, VA-ICECoT reasoning, and streaming TTS egress over LiveKit WebRTC or Twilio/Exotel/Plivo telephony SIP trunks.
 
 \subsection{Tier 4 -- Multi-Tier Cognitive Memory and Storage Layer}
 Four distinct storage engines operate concurrently: Upstash Redis for ephemeral in-call state, Supabase Postgres 15 for relational data, Supabase pgvector with HNSW cosine indexing for semantic facts, and FalkorDB for the associative entity knowledge graph.
@@ -227,7 +227,7 @@ The memory engine unifies four distinct storage layers to resolve conversational
     \item \textbf{Tier 1 -- Working Memory (Upstash Redis):} Holds the active call's turn buffer, rolling emotion moving averages, and carried-forward slot values ($<$10ms REST latency).
     \item \textbf{Tier 2 -- Long-Term Semantic Memory (pgvector):} Stores 1536-dimensional fact embeddings per contact, returning the top-5 facts above a 0.75 cosine similarity threshold using an HNSW index ($<$35ms).
     \item \textbf{Tier 3 -- Episodic Memory (Supabase Postgres):} Stores structured summaries, key topics, outcome states, and emotional trajectories across the contact's last 3 calls ($<$25ms).
-    \item \textbf{Tier 4 -- Associative Knowledge Graph (FalkorDB):} Models contacts, episodes, entities, and grievances connected by \texttt{LEADS\_TO} and \texttt{FRUSTRATED\_ABOUT} edges, answering multi-hop causal queries via OpenCypher ($<$40ms).
+    \item \textbf{Tier 4 -- Associative Knowledge Graph (FalkorDB):} Models contacts, episodes, entities, and grievances connected by \texttt{Contact -HAD\_EPISODE-> Episode}, \texttt{LEADS\_TO}, and \texttt{FRUSTRATED\_ABOUT} edges, answering multi-hop causal queries via OpenCypher ($<$40ms).
 \end{itemize}
 All four tiers execute in parallel using \texttt{asyncio.gather}. The combined results are synthesized into a compact memory context block injected directly into the LLM system prompt prior to generation.
 

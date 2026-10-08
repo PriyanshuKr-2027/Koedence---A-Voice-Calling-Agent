@@ -393,6 +393,18 @@ Telephony & Twilio / Plivo / Exotel & Dev vs. India-production \\
 \end{tabularx}
 \end{table}
 
+\subsection{Voice Activity Detection and Telephony Audio Framing}
+
+Inbound telephony calls ingest G.711 $\mu$-law audio at 8\,kHz (160 samples per 20\,ms frame, 320 bytes), which is decoded to 16-bit linear PCM and resampled to 16\,kHz for downstream speech-to-text and Hume paralinguistic emotion extraction, whereas the browser WebCall path ingests 16\,kHz PCM over WebRTC. Both custom ingress loops share an energy-based Voice Activity Detection (VAD) buffer governed by five configurable runtime hyperparameters:
+
+\begin{itemize}
+    \item \textbf{Energy Threshold (\texttt{VAD\_ENERGY\_THRESHOLD} = 400.0):} Root-mean-square (RMS) amplitude threshold distinguishing voiced frames from background PSTN line noise.
+    \item \textbf{Frame Duration (\texttt{VAD\_FRAME\_MS} = 20\,ms):} Discrete buffer quantization interval (160 samples at 8\,kHz, 320 samples at 16\,kHz).
+    \item \textbf{Silence Timeout (\texttt{VAD\_SILENCE\_MS} = 700\,ms):} Continuous silence interval (35 consecutive frames) required to endpoint speech, preserving intra-sentence natural pauses ($<$700\,ms) in quiet speech while splitting independent utterances.
+    \item \textbf{Minimum Utterance Length (\texttt{VAD\_MIN\_MS} = 120\,ms):} Minimum speech duration (6 frames) filtering out spurious line clicks, coughs, and PSTN switching transients.
+    \item \textbf{Maximum Utterance Length (\texttt{VAD\_MAX\_MS} = 15,000\,ms):} Forced utterance boundary limit preventing buffer overflow during continuous user monologues.
+\end{itemize}
+
 \subsection{Database Schema and Call Lifecycle}
 
 Fifteen Supabase tables hold the relational state, spanning organizations, agents, contacts, calls, call turns, and the three relational memory tiers (short-term fallback, long-term pgvector, episodic). Figure~\ref{fig:erschema} shows the entity-relationship structure; every table carries an \texttt{org\_id} foreign key, and Postgres row-level security enforces tenant isolation at the database layer rather than trusting application code to filter correctly on every query.
@@ -483,7 +495,7 @@ The central evaluation metric for C2 and C6 jointly is the Joint Recognition Bal
 
 A harmonic mean rather than a simple average is deliberate here: a system that nails emotion recognition but guesses randomly at intent should not score well just because one number is high. We picked this formulation because it mirrors how JX4MEI~\cite{jx4mei} scores joint recognition on the XMEI dataset, which gives us a point of comparison once evaluation data is collected.
 
-The evaluation dataset itself is synthesized in three stages, following the same structure JX4MEI uses to build XMEI: an LLM generates an objective transcript description of a call, then a disentangled emotion-and-intent chain-of-thought analysis, then a ground-truth joint label pass that a human reviewer spot-checks. This is not yet run at scale; what we have is the pipeline and the metric definition, not a completed benchmark run, and we say that plainly rather than reporting numbers we do not have.
+The evaluation dataset itself is synthesized in three stages, following the same structure JX4MEI uses to build XMEI: an LLM generates an objective transcript description of a call, then a disentangled emotion-and-intent chain-of-thought analysis, then a ground-truth joint label pass that a human reviewer spot-checks. For synthetic long-term caller histories (Dataset D1), every dialogue records its provenance (\texttt{"generator": "llm"} or \texttt{"generator": "fallback"}); live benchmarks strictly disallow deterministic fallback conversations unless explicitly permitted, and any remaining fallback conversations in final evaluation datasets are tallied and disclosed in the benchmark reporting. This is not yet run at scale; what we have is the pipeline and the metric definition, not a completed benchmark run, and we say that plainly rather than reporting numbers we do not have.
 
 \section{Comparative Analysis of Existing Methods}
 \label{sec:comparison}

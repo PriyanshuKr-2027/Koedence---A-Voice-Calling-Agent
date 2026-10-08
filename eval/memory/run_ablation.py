@@ -115,10 +115,27 @@ class StubMemoryBackend:
     async def mock_get_recent_episodes(self, contact_id: str, org_id: str, limit: int = 3, *args, **kwargs):
         return self.episodes.get(contact_id, [])[-limit:]
 
-    def mock_add_entities(self, contact_id: str, entities: List[str], episode_id: str, call_id: str, summary: str, *args, **kwargs):
+    def mock_add_entities(
+        self,
+        contact_id: str,
+        entities: List[str],
+        episode_id: str,
+        call_id: str,
+        date: Optional[str] = None,
+        summary: str = "",
+        contact_name: str = "Caller",
+        contact_phone: str = "",
+        *args,
+        **kwargs,
+    ):
         self.graph_entities.setdefault(contact_id, []).append({
             "entities": entities,
             "episode_summary": summary,
+            "contact_name": contact_name,
+            "contact_phone": contact_phone,
+            "call_id": call_id,
+            "episode_id": episode_id,
+            "date": date,
         })
 
     def mock_add_frustration_edges(self, contact_id: str, topics: List[str], episode_id: str, emotion_state: Any, *args, **kwargs):

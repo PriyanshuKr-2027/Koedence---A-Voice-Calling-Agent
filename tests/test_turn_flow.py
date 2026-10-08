@@ -111,7 +111,7 @@ async def test_call_start_loads_t3_and_t4_both_pipelines():
          patch("app.services.voice_pipeline.retrieve_all_memory", mock_retrieve), \
          patch("app.services.voice_pipeline.livekit_service.is_configured", return_value=False), \
          patch("app.services.voice_pipeline.supabase", None), \
-         patch("app.services.voice_pipeline._minimal_echo_loop", AsyncMock()), \
+         patch("app.services.voice_pipeline._custom_turn_loop", AsyncMock()), \
          patch("app.services.voice_pipeline._finalize_call", AsyncMock()):
 
         mock_ws = AsyncMock()
@@ -139,7 +139,7 @@ async def test_call_start_loads_t3_and_t4_both_pipelines():
          patch("app.services.webcall_pipeline.short_term.init_call_memory", AsyncMock()), \
          patch("app.services.webcall_pipeline.retrieve_all_memory", mock_retrieve_web), \
          patch("app.services.webcall_pipeline._push_sse_event", AsyncMock()), \
-         patch("app.services.webcall_pipeline._run_minimal_webcall_loop", AsyncMock()), \
+         patch("app.services.webcall_pipeline._custom_webcall_loop", AsyncMock()), \
          patch("app.services.webcall_pipeline._finalize_webcall", AsyncMock()):
 
         await run_webcall_agent(

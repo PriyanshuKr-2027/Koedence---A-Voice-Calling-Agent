@@ -7,6 +7,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.core.config import settings
 from app.services.emotion import fusion as emotion_fusion
 from app.services.intent import combined_rules, detector as intent_detector, resolver, slot_manager
 from app.services.llm import llm_service
@@ -115,7 +116,7 @@ async def process_turn(
             }
 
     # ── STEP 3: Intent Connector Resolution (if slots complete) ──────
-    elif intent_state.get("intent") and intent_state.get("confidence", 0) >= 0.70:
+    elif intent_state.get("intent") and intent_state.get("confidence", 0) >= float(settings.INTENT_CONFIDENCE_MIN):
         intent_slug = intent_state["intent"]
         new_slots = intent_state.get("slot_data", {})
 

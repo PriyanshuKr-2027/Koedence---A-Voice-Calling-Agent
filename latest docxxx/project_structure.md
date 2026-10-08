@@ -15,9 +15,10 @@ VoCall is structured as an enterprise-grade monorepo combining real-time audio p
 VOCALL 19 JULY/
 ├── app/                      # Primary Active FastAPI Backend Service (Python 3.10+)
 ├── src/                      # High-Performance Interactive Frontend (Vite 8 + React 19 + Tailwind)
-├── vocall/                   # Full Monorepo Sub-Package
+├── archive/                  # Archived Legacy Artifacts
+│   └── vocall_backend_legacy/# Legacy FastApi backend package (archived)
+├── vocall/                   # Monorepo Sub-Package
 │   ├── frontend/             # Next.js 14 App Router Dashboard & Agent Studio (TypeScript)
-│   ├── backend/              # Co-located FastAPI Backend Package
 │   └── docs/                 # Authoritative System & UI Specifications
 ├── supabase/                 # Supabase SQL Migrations & 15-Table Database Setup Queries
 ├── trigger/                  # Trigger.dev Asynchronous Background Job Pipelines

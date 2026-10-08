@@ -6,6 +6,8 @@ Emotion × Intent simultaneous signal evaluation engine.
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.services.emotion.mapping import map_to_canonical_emotion
+
 logger = logging.getLogger(__name__)
 
 SYSTEM_COMBINED_RULES: List[Dict[str, Any]] = [
@@ -109,11 +111,13 @@ def check_emotion_condition(emotion_state: Dict[str, Any], condition: Dict[str, 
         if "arousal_fused" in emotion_state
         else emotion_state.get("arousal", 0.5)
     )
-    dominant = str(
-        emotion_state.get("dominant_fused")
-        if "dominant_fused" in emotion_state
-        else emotion_state.get("dominant", "neutral")
-    ).lower()
+    dominant = map_to_canonical_emotion(
+        str(
+            emotion_state.get("dominant_fused")
+            if "dominant_fused" in emotion_state
+            else emotion_state.get("dominant", "neutral")
+        )
+    )
 
     if "valence_lt" in condition and valence >= float(condition["valence_lt"]):
         return False
@@ -128,7 +132,7 @@ def check_emotion_condition(emotion_state: Dict[str, Any], condition: Dict[str, 
         return False
 
     if "dominant_in" in condition:
-        allowed = [str(d).lower() for d in condition["dominant_in"]]
+        allowed = [map_to_canonical_emotion(str(d)) for d in condition["dominant_in"]]
         if dominant not in allowed:
             return False
 

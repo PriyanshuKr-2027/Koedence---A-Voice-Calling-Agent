@@ -12,8 +12,13 @@ from collections import Counter
 import json
 from pathlib import Path
 import random
+import sys
 from typing import Any, Dict, List, Optional, Union
 import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def load_jsonl(file_path: Union[str, Path]) -> List[Dict[str, Any]]:
@@ -61,6 +66,10 @@ def run_check_d1(
 
     # Question distribution tally
     q_counts = Counter(q.get("type", "unknown") for q in questions)
+    gen_counts = Counter(c.get("generator", "unknown") for c in calls)
+    fallback_count = gen_counts.get("fallback", 0)
+    llm_count = gen_counts.get("llm", 0)
+
     total_turns = sum(len(c.get("turns", [])) for c in calls)
     avg_turns = round(total_turns / max(1, len(calls)), 2)
     avg_calls = round(len(calls) / max(1, len(callers)), 2)
@@ -72,6 +81,8 @@ def run_check_d1(
     print(f"Total Calls:         {len(calls)} (average {avg_calls} calls/caller)")
     print(f"Total Turns:         {total_turns} (average {avg_turns} turns/call)")
     print(f"Total Questions:     {len(questions)} ({len(questions) // max(1, len(callers))} per caller)")
+    print(f"Generator Breakdown: {llm_count} LLM, {fallback_count} Fallback")
+    print(f"Fallback Total:      {fallback_count} conversation(s)")
     print("-" * 80)
     print("QUESTION DISTRIBUTION BY TYPE:")
     for q_type, count in sorted(q_counts.items()):
@@ -93,8 +104,9 @@ def run_check_d1(
         style = caller.get("language_style", "Unknown")
         phone = caller.get("phone", "Unknown")
         turns = call.get("turns", [])
+        gen = call.get("generator", "unspecified")
 
-        print(f"\n--- [Sample {i}/{len(sampled_indices)}] Call ID: {call.get('call_id')} ---")
+        print(f"\n--- [Sample {i}/{len(sampled_indices)}] Call ID: {call.get('call_id')} (Generator: {gen}) ---")
         print(f"Caller:       {name} ({call.get('caller_id')}) | Phone: {phone}")
         print(f"Style:        {style} | Emotion Arc: {call.get('emotion_arc')}")
         print(f"Topic:        {call.get('call_topic')}")
@@ -116,6 +128,9 @@ def run_check_d1(
         "total_questions": len(questions),
         "avg_calls_per_caller": avg_calls,
         "avg_turns_per_call": avg_turns,
+        "fallback_conversations": fallback_count,
+        "llm_conversations": llm_count,
+        "generator_counts": dict(gen_counts),
         "question_counts": dict(q_counts),
     }
 

@@ -226,6 +226,12 @@ def start_run(
     except Exception:
         pipeline_path = "custom"
 
+    try:
+        from app.core.config import settings_snapshot
+        snapshot = settings_snapshot()
+    except Exception:
+        snapshot = {}
+
     manifest: Dict[str, Any] = {
         "experiment": experiment,
         "timestamp": timestamp,
@@ -237,6 +243,7 @@ def start_run(
         "python_version": sys.version,
         "package_versions": package_versions,
         "model_names": model_names,
+        "settings_snapshot": snapshot,
         "config": loaded_config,
     }
 

@@ -167,12 +167,51 @@ class TestTenantIsolation:
         token_a = create_token({"org_id": ORG_A})
         headers = {"Authorization": f"Bearer {token_a}"}
 
-        with patch("app.services.supabase_client.supabase", sb):
-            res_lt = auth_client.get(f"/api/v1/memory/long-term?contact_id={contact_row['id']}", headers=headers)
-            assert res_lt.status_code == 403
+    def test_org_a_cannot_read_org_b_call_memory(self, auth_client, mock_supabase_org_b):
+        sb, _, call_row, _, _ = mock_supabase_org_b
+        token_a = create_token({"org_id": ORG_A})
+        headers = {"Authorization": f"Bearer {token_a}"}
 
-            res_ep = auth_client.get(f"/api/v1/memory/episodic?contact_id={contact_row['id']}", headers=headers)
-            assert res_ep.status_code == 403
+        with patch("app.services.supabase_client.supabase", sb), \
+             patch("app.routers.calls.supabase", sb):
+            get_res = auth_client.get(f"/api/v1/calls/{call_row['id']}/memory", headers=headers)
+            assert get_res.status_code == 403
+
+    def test_calls_routes_require_auth_returning_401(self, auth_client):
+        """Unauthenticated requests to /calls endpoints return 401 when dev auth is disabled."""
+        res_list = auth_client.get("/api/v1/calls")
+        assert res_list.status_code == 401
+
+        res_post = auth_client.post("/api/v1/calls", json={"direction": "inbound"})
+        assert res_post.status_code == 401
+
+        res_get = auth_client.get(f"/api/v1/calls/{str(uuid4())}")
+        assert res_get.status_code == 401
+
+        res_mem = auth_client.get(f"/api/v1/calls/{str(uuid4())}/memory")
+        assert res_mem.status_code == 401
+
+
+class TestTwilioWebhookSignatures:
+    """Tests validating Twilio webhook signatures and rejection with 403."""
+
+    def test_twilio_inbound_with_invalid_signature_returns_403(self, auth_client):
+        with patch.object(settings, "TWILIO_AUTH_TOKEN", "mock-auth-token-secret"):
+            res = auth_client.post(
+                "/api/v1/webhooks/twilio/inbound",
+                data={"CallSid": "CA12345", "From": "+15551112222", "To": "+15553334444"},
+                headers={"X-Twilio-Signature": "invalid-forged-signature"},
+            )
+            assert res.status_code == 403
+
+    def test_twilio_status_with_invalid_signature_returns_403(self, auth_client):
+        with patch.object(settings, "TWILIO_AUTH_TOKEN", "mock-auth-token-secret"):
+            res = auth_client.post(
+                "/api/v1/webhooks/twilio/status",
+                data={"CallSid": "CA12345", "CallStatus": "completed", "CallDuration": "45"},
+                headers={"X-Twilio-Signature": "invalid-forged-signature"},
+            )
+            assert res.status_code == 403
 
 
 class TestDevAuthAndStartup:

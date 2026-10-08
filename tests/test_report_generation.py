@@ -134,7 +134,7 @@ def test_make_tables_cli_execution(tmp_path: Path):
         "--eval-dir", str(EVAL_ROOT),
         "--output-dir", str(out_dir),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, input="", timeout=30)
     assert res.returncode == 0, f"make_tables.py failed: {res.stderr}"
 
     assert (out_dir / "all_tables.md").exists()
@@ -185,7 +185,7 @@ def test_make_figures_cli_execution(tmp_path: Path):
         "--results-dir", str(RESULTS_ROOT),
         "--out-dir", str(out_dir),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, input="", timeout=30)
     assert res.returncode == 0, f"make_figures.py failed: {res.stderr}"
 
     assert (out_dir / "fig4_memory_emotion.png").exists()
@@ -247,7 +247,7 @@ def test_claims_check_cli_execution(tmp_path: Path):
         "--eval-dir", str(EVAL_ROOT),
         "--json-out", str(json_out),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, input="", timeout=30)
     assert res.returncode == 0, f"claims_check.py failed: {res.stderr}"
 
     assert json_out.exists()
@@ -259,7 +259,7 @@ def test_claims_check_cli_execution(tmp_path: Path):
 
     # Invocations with --allow-mock stamp MOCK DATA
     cmd_mock = cmd + ["--allow-mock"]
-    res_mock = subprocess.run(cmd_mock, capture_output=True, text=True)
+    res_mock = subprocess.run(cmd_mock, capture_output=True, text=True, input="", timeout=30)
     assert res_mock.returncode == 0
     with open(json_out, "r", encoding="utf-8") as f:
         mock_data = json.load(f)

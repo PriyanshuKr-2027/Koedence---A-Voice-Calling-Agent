@@ -2,6 +2,8 @@ import logging
 from typing import Optional, Dict, Any
 import httpx
 
+from app.services.emotion.mapping import map_to_canonical_emotion
+
 logger = logging.getLogger(__name__)
 
 # Emotion mapping dictionary based on Circumplex Model of Affect (Valence [-1.0..1.0], Arousal [0.0..1.0])
@@ -138,7 +140,7 @@ async def analyze_audio_emotion(
         return {
             "valence": round(max(-1.0, min(1.0, valence)), 3),
             "arousal": round(max(0.0, min(1.0, arousal)), 3),
-            "dominant": dominant_emotion,
+            "dominant": map_to_canonical_emotion(dominant_emotion),
             "confidence": round(max(0.0, min(1.0, confidence)), 3),
         }
 

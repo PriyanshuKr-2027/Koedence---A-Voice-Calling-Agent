@@ -7,10 +7,7 @@ import httpx
 try:
     from app.services.supabase_client import get_supabase_client
 except ImportError:
-    try:
-        from vocall.backend.app.services.supabase_client import get_supabase_client
-    except ImportError:
-        get_supabase_client = None
+    get_supabase_client = None
 
 
 def _format_e164(phone: str) -> str:

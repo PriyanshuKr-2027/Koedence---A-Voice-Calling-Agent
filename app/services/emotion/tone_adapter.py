@@ -1,6 +1,8 @@
 import logging
 from typing import Optional, Dict, Any
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,15 +32,15 @@ def get_tone_instruction(
 
     v = float(emotion_state.get("valence", 0.0))
 
-    if v < -0.6:
+    if v < -float(settings.TONE_THRESHOLD_STRONG):
         return (
             "The caller is very frustrated. Be extremely empathetic. "
             "Acknowledge their frustration explicitly before responding. "
             "Slow down. Use shorter sentences."
         )
-    elif v < -0.4:
+    elif v < -float(settings.TONE_THRESHOLD_MILD):
         return "The caller seems unhappy. Be extra empathetic and patient."
-    elif v > 0.6:
+    elif v > float(settings.TONE_THRESHOLD_POSITIVE):
         return "The caller is in a good mood. Be warm and conversational."
 
     return None

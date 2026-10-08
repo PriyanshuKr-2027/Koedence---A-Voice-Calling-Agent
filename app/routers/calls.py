@@ -21,14 +21,14 @@ router = APIRouter(prefix="/calls", tags=["Calls"])
 
 @router.get("", response_model=List[CallResponse])
 async def list_calls(
-    org_id: UUID,
     agent_id: Optional[UUID] = None,
     direction: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    org_id: Optional[UUID] = None,
     current_user: Dict[str, Any] = Depends(require_authenticated_user),
 ):
-    if str(org_id) != current_user["org_id"]:
+    if org_id is not None and str(org_id) != current_user["org_id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: cannot access calls of another organization",

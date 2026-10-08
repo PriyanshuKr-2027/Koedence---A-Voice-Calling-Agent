@@ -5,8 +5,11 @@ from typing import Optional, Dict, Any
 import httpx
 
 from app.core.config import settings
+from app.services.emotion.mapping import CANONICAL_EMOTIONS, map_to_canonical_emotion
 
 logger = logging.getLogger(__name__)
+
+CANONICAL_LABELS_STR = ", ".join(CANONICAL_EMOTIONS)
 
 
 async def analyze_text_emotion(
@@ -14,9 +17,10 @@ async def analyze_text_emotion(
     groq_client: Any = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Extracts emotion from text transcript using Groq llama-3.3-70b in JSON mode.
+    Extracts emotion from text transcript using Groq in JSON mode.
 
-    Supports English, Hindi, and Hinglish.
+    Supports English, Hindi, and Hinglish. Constrains dominant emotion to:
+    angry, frustrated, sad, anxious, confused, neutral, calm, happy, other.
 
     Args:
         transcript_chunk: The text transcript of a single dialogue turn.
@@ -31,12 +35,15 @@ async def analyze_text_emotion(
 
     system_prompt = (
         "Extract emotion from text. Return ONLY valid JSON.\n"
+        f"Allowed dominant labels: {CANONICAL_LABELS_STR}.\n"
         "Note: transcript may be in English, Hindi, or Hinglish — analyze regardless of language."
     )
     user_prompt = (
         f"Analyze: '{transcript_chunk.strip()}'\n"
-        "Return: {valence: float -1 to 1, arousal: float 0 to 1, dominant: string, confidence: float 0 to 1}"
+        f"Return: {{valence: float -1 to 1, arousal: float 0 to 1, dominant: string (must be one of: {CANONICAL_LABELS_STR}), confidence: float 0 to 1}}"
     )
+
+    llm_model = settings.LLM_MODEL or "llama-3.3-70b-versatile"
 
     try:
         response_content: Optional[str] = None
@@ -46,7 +53,7 @@ async def analyze_text_emotion(
             create_fn = groq_client.chat.completions.create
             if inspect.iscoroutinefunction(create_fn):
                 res = await create_fn(
-                    model="llama-3.3-70b-versatile",
+                    model=llm_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -56,7 +63,7 @@ async def analyze_text_emotion(
                 )
             else:
                 res = create_fn(
-                    model="llama-3.3-70b-versatile",
+                    model=llm_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -77,7 +84,7 @@ async def analyze_text_emotion(
                 from groq import AsyncGroq
                 client = AsyncGroq(api_key=api_key)
                 res = await client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=llm_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -95,7 +102,7 @@ async def analyze_text_emotion(
                     "Content-Type": "application/json",
                 }
                 payload = {
-                    "model": "llama-3.3-70b-versatile",
+                    "model": llm_model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -119,7 +126,8 @@ async def analyze_text_emotion(
 
         valence = float(parsed.get("valence", 0.0))
         arousal = float(parsed.get("arousal", 0.5))
-        dominant = str(parsed.get("dominant", "neutral"))
+        raw_dominant = str(parsed.get("dominant", "neutral"))
+        dominant = map_to_canonical_emotion(raw_dominant)
         confidence = float(parsed.get("confidence", 0.8))
 
         # Clamp range bounds

@@ -17,12 +17,13 @@ import logging
 import time
 from typing import Optional, Dict, Any, List
 
+from app.core.config import settings
 from app.services.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "stm:"
-DEFAULT_TTL_SECONDS = 3600
+DEFAULT_TTL_SECONDS = settings.SLOT_TTL_SECONDS
 
 
 async def init_call_memory(call_id: str) -> bool:
@@ -89,10 +90,35 @@ async def append_turn(
             value=json.dumps(data),
             ex_seconds=DEFAULT_TTL_SECONDS,
         )
-        logger.debug("Appended %s turn to short-term memory for call %s", role, call_id)
+        if success:
+            await redis_client.expire(key, DEFAULT_TTL_SECONDS)
+        logger.debug("Appended %s turn to short-term memory for call %s (TTL refreshed to %ds)", role, call_id, DEFAULT_TTL_SECONDS)
         return success
     except Exception as exc:
         logger.error("Failed to append_turn for call %s: %s", call_id, exc)
+        return False
+
+
+async def write_turn(call_id: str, turn_data: Dict[str, Any]) -> bool:
+    """
+    Appends a turn dictionary to short-term memory and refreshes the 3600s TTL.
+    """
+    role = turn_data.get("role", "user")
+    content = turn_data.get("content", "")
+    emotion_state = turn_data.get("emotion") or turn_data.get("emotion_state")
+    return await append_turn(call_id, role, content, emotion_state)
+
+
+async def refresh_call_ttl(call_id: str, ttl_seconds: Optional[int] = None) -> bool:
+    """
+    Confirms or refreshes the TTL on stm:{call_id} (defaults to 3600s).
+    """
+    ttl = ttl_seconds if ttl_seconds is not None else DEFAULT_TTL_SECONDS
+    try:
+        key = f"{KEY_PREFIX}{call_id}"
+        return await redis_client.expire(key, ttl)
+    except Exception as exc:
+        logger.error("Failed to refresh_call_ttl for call %s: %s", call_id, exc)
         return False
 
 
@@ -131,6 +157,8 @@ async def append_emotion_event(
             value=json.dumps(data),
             ex_seconds=DEFAULT_TTL_SECONDS,
         )
+        if success:
+            await redis_client.expire(key, DEFAULT_TTL_SECONDS)
         logger.debug("Appended emotion event to short-term memory for call %s", call_id)
         return success
     except Exception as exc:
@@ -180,6 +208,29 @@ async def get_slots(call_id: str, intent_slug: str) -> Dict[str, Any]:
         return {}
 
 
+async def get_all_slots(call_id: str) -> Dict[str, Any]:
+    """
+    Retrieves all slots across all intents for a given call_id:
+      SCAN/KEYS slot:{call_id}:*
+    Returns {intent_slug: {slot_name: value, ...}}
+    """
+    if not call_id:
+        return {}
+    try:
+        pattern = f"slot:{call_id}:*"
+        keys = await redis_client.keys(pattern)
+        all_slots: Dict[str, Any] = {}
+        if keys:
+            for k in keys:
+                slug = k.split(":")[-1]
+                slots_dict = await get_slots(call_id, slug)
+                all_slots[slug] = slots_dict
+        return all_slots
+    except Exception as exc:
+        logger.error("Failed to get_all_slots for call %s: %s", call_id, exc)
+        return {}
+
+
 async def write_slot(call_id: str, intent_slug: str, slots: Dict[str, Any]) -> None:
     """
     Persists slots dictionary for given call_id and intent_slug to Redis:
@@ -195,7 +246,8 @@ async def write_slot(call_id: str, intent_slug: str, slots: Dict[str, Any]) -> N
             value=payload,
             ex_seconds=DEFAULT_TTL_SECONDS,
         )
-        logger.debug("Wrote slots for call %s intent %s", call_id, intent_slug)
+        await redis_client.expire(key, DEFAULT_TTL_SECONDS)
+        logger.debug("Wrote slots for call %s intent %s (TTL refreshed)", call_id, intent_slug)
     except Exception as exc:
         logger.error("Failed to write_slot for call %s intent %s: %s", call_id, intent_slug, exc)
     return None

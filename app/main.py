@@ -30,8 +30,11 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    if settings.ENVIRONMENT.lower() == "production" and settings.ALLOW_DEV_AUTH:
-        raise RuntimeError("ALLOW_DEV_AUTH cannot be enabled when ENVIRONMENT=production")
+    if settings.ENVIRONMENT.lower() == "production":
+        if settings.ALLOW_DEV_AUTH:
+            raise RuntimeError("ALLOW_DEV_AUTH cannot be enabled when ENVIRONMENT=production")
+        if not (settings.TWILIO_AUTH_TOKEN and settings.TWILIO_AUTH_TOKEN.strip()):
+            raise RuntimeError("TWILIO_AUTH_TOKEN must be set when ENVIRONMENT=production")
     active_path = get_active_pipeline_path()
     logger.info("VoCall Voice Pipeline Startup: Active pipeline path is [%s]", active_path)
 

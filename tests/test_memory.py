@@ -7,7 +7,7 @@ from unittest.mock import patch, AsyncMock
 
 BASE = "/api/v1/memory"
 FAKE_CONTACT_ID = str(uuid4())
-FAKE_ORG_ID = str(uuid4())
+FAKE_ORG_ID = "00000000-0000-0000-0000-000000000001"
 FAKE_AGENT_ID = str(uuid4())
 
 

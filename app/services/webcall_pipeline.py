@@ -77,18 +77,26 @@ _active_webcall_tasks: Dict[str, asyncio.Task] = {}
 # Redis event helpers — SSE feed per call_id
 # ---------------------------------------------------------------------------
 
-WEBCALL_EVENT_TTL = 3600  # 1 hour
+WEBCALL_EVENT_TTL = 86400  # 24 hours
 
 
 async def _push_sse_event(call_id: str, event_type: str, data: Dict[str, Any]) -> None:
     """
     Appends a JSON event to the Redis list `webcall:{call_id}:events`.
+    Sets a 24-hour (86400s) TTL on first event push.
     The SSE endpoint reads from this list and streams to the browser.
     """
     payload = json.dumps({"type": event_type, "ts": int(time.time() * 1000), **data})
     key = f"webcall:{call_id}:events"
     try:
-        await redis_client.rpush(key, payload)
+        count = await redis_client.rpush(key, payload)
+        # Set 24 hour TTL when first event is pushed or ensure TTL is active
+        if count == 1 or count is None:
+            await redis_client.expire(key, WEBCALL_EVENT_TTL)
+        else:
+            ttl = await redis_client.ttl(key)
+            if ttl is not None and ttl < 0:
+                await redis_client.expire(key, WEBCALL_EVENT_TTL)
     except Exception as exc:
         logger.warning("Failed to push SSE event for call %s: %s", call_id, exc)
 
@@ -455,9 +463,11 @@ async def _custom_webcall_loop(
         turn_idx = 0
         vad = VoiceActivityDetector(
             sample_rate=16000,
-            frame_duration_ms=20,
-            energy_threshold=getattr(settings, "VAD_ENERGY_THRESHOLD", 400.0),
-            silence_duration_ms=getattr(settings, "VAD_SILENCE_MS", 700),
+            frame_duration_ms=settings.VAD_FRAME_MS,
+            energy_threshold=settings.VAD_ENERGY_THRESHOLD,
+            silence_duration_ms=settings.VAD_SILENCE_MS,
+            min_utterance_ms=settings.VAD_MIN_MS,
+            max_utterance_ms=settings.VAD_MAX_MS,
         )
 
         async def on_data_received(data: bytes, participant):
@@ -651,6 +661,12 @@ async def _finalize_webcall(call_id: str) -> None:
         await _push_sse_event(call_id, "status", {"state": "ended"})
     except Exception:
         pass
+
+    try:
+        await redis_client.delete(f"webcall:{call_id}:events")
+        logger.debug("Deleted webcall events list for %s", call_id)
+    except Exception as exc:
+        logger.warning("Failed to delete webcall events for %s: %s", call_id, exc)
 
     try:
         if livekit_service.is_configured():

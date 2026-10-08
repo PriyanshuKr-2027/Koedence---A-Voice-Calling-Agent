@@ -1,5 +1,10 @@
 from app.services.emotion.audio_signal import analyze_audio_emotion
 from app.services.emotion.fusion import fire_threshold_connectors, fuse_emotion_signals
+from app.services.emotion.mapping import (
+    CANONICAL_EMOTIONS,
+    HUME_TO_CANONICAL_EMOTION_MAP,
+    map_to_canonical_emotion,
+)
 from app.services.emotion.text_signal import analyze_text_emotion
 from app.services.emotion.tone_adapter import (
     fire_frustration_connector,
@@ -13,4 +18,8 @@ __all__ = [
     "fire_threshold_connectors",
     "get_tone_instruction",
     "fire_frustration_connector",
+    "CANONICAL_EMOTIONS",
+    "HUME_TO_CANONICAL_EMOTION_MAP",
+    "map_to_canonical_emotion",
 ]
+

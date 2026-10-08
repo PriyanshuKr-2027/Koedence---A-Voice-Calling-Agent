@@ -1,15 +1,19 @@
 {
   "dataset": "D1",
   "description": "Synthetic caller histories for memory evaluation",
-  "seed": 42,
+  "seed": 0,
   "n_callers": 4,
-  "total_calls": 22,
+  "total_calls": 26,
   "total_questions": 32,
+  "total_llm_conversations": 0,
+  "total_fallback_conversations": 26,
+  "mode": "mock",
+  "allow_fallback": false,
   "answer_model": "llama-3.3-70b-versatile",
-  "created_at": "2026-10-05T06:10:54.755709+00:00",
+  "created_at": "2026-10-07T18:56:22.026975+00:00",
   "files": {
-    "callers": "eval\\data\\d1\\callers.jsonl",
-    "calls": "eval\\data\\d1\\calls.jsonl",
-    "questions": "eval\\data\\d1\\questions.jsonl"
+    "callers": "eval/data/d1/callers.jsonl",
+    "calls": "eval/data/d1/calls.jsonl",
+    "questions": "eval/data/d1/questions.jsonl"
   }
 }

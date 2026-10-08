@@ -157,6 +157,10 @@ def calculate_rms(pcm: bytes) -> float:
 
 
 # ---------------------------------------------------------------------------
+from app.core.config import settings
+
+
+# ---------------------------------------------------------------------------
 # Voice Activity Detector (VAD) & Frame Buffer
 # ---------------------------------------------------------------------------
 
@@ -164,13 +168,13 @@ class VoiceActivityDetector:
     """
     Energy-based Voice Activity Detector for telephone & webcall audio streaming.
 
-    Buffers incoming 20 ms frames and detects:
+    Buffers incoming frames (e.g. 20 ms) and detects:
       - Speech start: after N consecutive voiced frames (start_voiced_frames)
       - Speech end: after M ms of continuous silence (silence_duration_ms)
       - Maximum utterance length: forces emission if utterance exceeds max_utterance_ms
 
     Usage:
-        vad = VoiceActivityDetector(sample_rate=8000, energy_threshold=400.0)
+        vad = VoiceActivityDetector(sample_rate=8000)
         for frame in audio_frames:
             utterance = vad.process_frame(frame)
             if utterance is not None:
@@ -180,21 +184,21 @@ class VoiceActivityDetector:
     def __init__(
         self,
         sample_rate: int = 8000,
-        frame_duration_ms: int = 20,
-        energy_threshold: float = 400.0,
+        frame_duration_ms: Optional[int] = None,
+        energy_threshold: Optional[float] = None,
         start_voiced_frames: int = 3,
-        silence_duration_ms: int = 700,
-        max_utterance_ms: int = 15000,
-        min_utterance_ms: int = 120,
+        silence_duration_ms: Optional[int] = None,
+        max_utterance_ms: Optional[int] = None,
+        min_utterance_ms: Optional[int] = None,
         pre_speech_frames: int = 5,
     ) -> None:
         self.sample_rate = sample_rate
-        self.frame_duration_ms = frame_duration_ms
-        self.energy_threshold = energy_threshold
+        self.frame_duration_ms = frame_duration_ms if frame_duration_ms is not None else getattr(settings, "VAD_FRAME_MS", 20)
+        self.energy_threshold = energy_threshold if energy_threshold is not None else getattr(settings, "VAD_ENERGY_THRESHOLD", 400.0)
         self.start_voiced_frames = start_voiced_frames
-        self.silence_duration_ms = silence_duration_ms
-        self.max_utterance_ms = max_utterance_ms
-        self.min_utterance_ms = min_utterance_ms
+        self.silence_duration_ms = silence_duration_ms if silence_duration_ms is not None else getattr(settings, "VAD_SILENCE_MS", 700)
+        self.max_utterance_ms = max_utterance_ms if max_utterance_ms is not None else getattr(settings, "VAD_MAX_MS", 15000)
+        self.min_utterance_ms = min_utterance_ms if min_utterance_ms is not None else getattr(settings, "VAD_MIN_MS", 120)
         self.pre_speech_limit = pre_speech_frames
 
         # State

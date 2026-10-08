@@ -1,0 +1,19 @@
+{
+  "n_callers": 4,
+  "total_calls": 26,
+  "total_questions": 32,
+  "avg_calls_per_caller": 6.5,
+  "avg_turns_per_call": 8.0,
+  "fallback_conversations": 26,
+  "llm_conversations": 0,
+  "generator_counts": {
+    "fallback": 26
+  },
+  "question_counts": {
+    "fact_recall": 8,
+    "preference": 8,
+    "recurring_complaint_pattern": 4,
+    "temporal": 4,
+    "adversarial": 8
+  }
+}

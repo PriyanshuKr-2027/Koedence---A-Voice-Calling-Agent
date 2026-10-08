@@ -252,7 +252,7 @@ VoCall is organized into five operational layers:
 \begin{enumerate}[leftmargin=*]
     \item \textbf{Client Layer:} A Next.js 14 web dashboard for agent management and contact inspection, coupled with a WebRTC browser testing modal.
     \item \textbf{FastAPI Application Layer:} Orchestrates REST endpoints, Server-Sent Events (SSE), authentication, and memory routing.
-    \item \textbf{Real-Time Voice Pipeline:} A sub-500ms pipeline powered by Pipecat and LiveKit, coordinating STT, parallel emotion extraction, VA-ICECoT reasoning, LLM inference, and TTS audio egress.
+    \item \textbf{Real-Time Voice Pipeline:} A sub-500ms pipeline powered by Pipecat and LiveKit, coordinating 8\,kHz G.711 $\mu$-law telephony / 16\,kHz WebRTC audio ingestion, 20\,ms VAD frame buffering (RMS threshold 400.0, 700\,ms silence timeout, 120\,ms min / 15\,s max utterance duration), STT, parallel emotion extraction, VA-ICECoT reasoning, LLM inference, and TTS audio egress.
     \item \textbf{Four-Tier Storage Layer:} Unifies Upstash Redis, Supabase Postgres, Supabase pgvector, and FalkorDB.
     \item \textbf{Background Worker Layer:} An asynchronous post-call engine on Trigger.dev executing an 11-stage pipeline (fact extraction, graph update, CRM sync).
 \end{enumerate}

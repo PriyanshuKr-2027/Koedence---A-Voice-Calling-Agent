@@ -275,106 +275,130 @@ CREATE TRIGGER handle_calls_updated_at
     EXECUTE PROCEDURE extensions.moddatetime(updated_at);
 
 -- 5. ROW LEVEL SECURITY (RLS)
+-- 5. ROW LEVEL SECURITY (RLS) & PRIVILEGE HARDENING
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organizations FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.spaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.spaces FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agents FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_keys FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.phone_numbers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.phone_numbers FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contacts FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.connectors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.connectors FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.connector_configs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.connector_configs FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.calls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calls FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.memory_long_term ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.memory_long_term FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.memory_episodic ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.memory_episodic FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.emotion_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.emotion_events FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.intent_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.intent_events FORCE ROW LEVEL SECURITY;
+
 ALTER TABLE public.compliance_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.compliance_log FORCE ROW LEVEL SECURITY;
 
 -- POLICIES
 DROP POLICY IF EXISTS "Users can view their organization" ON public.organizations;
-CREATE POLICY "Users can view their organization" ON public.organizations FOR SELECT USING (id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Users can update their organization" ON public.organizations;
-CREATE POLICY "Users can update their organization" ON public.organizations FOR UPDATE USING (id = public.get_user_org_id());
+DROP POLICY IF EXISTS "Org members can view organization" ON public.organizations;
+DROP POLICY IF EXISTS "Org members can update organization" ON public.organizations;
+CREATE POLICY "Org members can view organization" ON public.organizations FOR SELECT TO authenticated USING (id = public.get_user_org_id());
+CREATE POLICY "Org members can update organization" ON public.organizations FOR UPDATE TO authenticated USING (id = public.get_user_org_id()) WITH CHECK (id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Users can view profiles in their organization" ON public.profiles;
-CREATE POLICY "Users can view profiles in their organization" ON public.profiles FOR SELECT USING (id = auth.uid() OR org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (id = auth.uid());
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can view profiles in their organization" ON public.profiles FOR SELECT TO authenticated USING (id = auth.uid() OR org_id = public.get_user_org_id());
+CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT TO authenticated WITH CHECK (id = auth.uid());
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
 DROP POLICY IF EXISTS "Org members can view spaces" ON public.spaces;
-CREATE POLICY "Org members can view spaces" ON public.spaces FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage spaces" ON public.spaces;
-CREATE POLICY "Org members can manage spaces" ON public.spaces FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage spaces" ON public.spaces FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view agents" ON public.agents;
-CREATE POLICY "Org members can view agents" ON public.agents FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage agents" ON public.agents;
-CREATE POLICY "Org members can manage agents" ON public.agents FOR ALL USING (org_id = public.get_user_org_id());
-
-DROP POLICY IF EXISTS "Org members can view api_keys" ON public.api_keys;
-CREATE POLICY "Org members can view api_keys" ON public.api_keys FOR SELECT USING (org_id = public.get_user_org_id());
-
-DROP POLICY IF EXISTS "Org members can manage api_keys" ON public.api_keys;
-CREATE POLICY "Org members can manage api_keys" ON public.api_keys FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage agents" ON public.agents FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view phone_numbers" ON public.phone_numbers;
-CREATE POLICY "Org members can view phone_numbers" ON public.phone_numbers FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage phone_numbers" ON public.phone_numbers;
-CREATE POLICY "Org members can manage phone_numbers" ON public.phone_numbers FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage phone_numbers" ON public.phone_numbers FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view contacts" ON public.contacts;
-CREATE POLICY "Org members can view contacts" ON public.contacts FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage contacts" ON public.contacts;
-CREATE POLICY "Org members can manage contacts" ON public.contacts FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage contacts" ON public.contacts FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view connectors" ON public.connectors;
-CREATE POLICY "Org members can view connectors" ON public.connectors FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage connectors" ON public.connectors;
-CREATE POLICY "Org members can manage connectors" ON public.connectors FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage connectors" ON public.connectors FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can access their connector_configs" ON public.connector_configs;
-CREATE POLICY "Org members can access their connector_configs" ON public.connector_configs FOR ALL USING (org_id = (auth.jwt() ->> 'org_id')::uuid OR org_id = public.get_user_org_id()) WITH CHECK (org_id = (auth.jwt() ->> 'org_id')::uuid OR org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage connector_configs" ON public.connector_configs FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view calls" ON public.calls;
-CREATE POLICY "Org members can view calls" ON public.calls FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage calls" ON public.calls;
-CREATE POLICY "Org members can manage calls" ON public.calls FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage calls" ON public.calls FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view long term memory" ON public.memory_long_term;
-CREATE POLICY "Org members can view long term memory" ON public.memory_long_term FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage long term memory" ON public.memory_long_term;
-CREATE POLICY "Org members can manage long term memory" ON public.memory_long_term FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage long term memory" ON public.memory_long_term FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view episodic memory" ON public.memory_episodic;
-CREATE POLICY "Org members can view episodic memory" ON public.memory_episodic FOR SELECT USING (org_id = public.get_user_org_id());
-
 DROP POLICY IF EXISTS "Org members can manage episodic memory" ON public.memory_episodic;
-CREATE POLICY "Org members can manage episodic memory" ON public.memory_episodic FOR ALL USING (org_id = public.get_user_org_id());
+CREATE POLICY "Org members can manage episodic memory" ON public.memory_episodic FOR ALL TO authenticated USING (org_id = public.get_user_org_id()) WITH CHECK (org_id = public.get_user_org_id());
 
 DROP POLICY IF EXISTS "Org members can view emotion events" ON public.emotion_events;
-CREATE POLICY "Org members can view emotion events" ON public.emotion_events FOR SELECT USING (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id()));
-
 DROP POLICY IF EXISTS "Org members can manage emotion events" ON public.emotion_events;
-CREATE POLICY "Org members can manage emotion events" ON public.emotion_events FOR ALL USING (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id()));
+CREATE POLICY "Org members can manage emotion events" ON public.emotion_events FOR ALL TO authenticated USING (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id())) WITH CHECK (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id()));
 
 DROP POLICY IF EXISTS "Org members can view intent events" ON public.intent_events;
-CREATE POLICY "Org members can view intent events" ON public.intent_events FOR SELECT USING (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id()));
-
 DROP POLICY IF EXISTS "Org members can manage intent events" ON public.intent_events;
-CREATE POLICY "Org members can manage intent events" ON public.intent_events FOR ALL USING (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id()));
+CREATE POLICY "Org members can manage intent events" ON public.intent_events FOR ALL TO authenticated USING (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id())) WITH CHECK (call_id IN (SELECT id FROM public.calls WHERE org_id = public.get_user_org_id()));
 
+-- API_KEYS & COMPLIANCE_LOG: NO POLICIES FOR ANON OR AUTHENTICATED (SERVICE ROLE ONLY)
+DROP POLICY IF EXISTS "Org members can view api_keys" ON public.api_keys;
+DROP POLICY IF EXISTS "Org members can manage api_keys" ON public.api_keys;
 DROP POLICY IF EXISTS "Org members can view compliance logs" ON public.compliance_log;
-CREATE POLICY "Org members can view compliance logs" ON public.compliance_log FOR SELECT USING (true);
-
 DROP POLICY IF EXISTS "Org members can insert compliance logs" ON public.compliance_log;
-CREATE POLICY "Org members can insert compliance logs" ON public.compliance_log FOR INSERT WITH CHECK (true);
+
+-- 6. PRIVILEGE REVOCATIONS FOR ANON & AUTHENTICATED
+REVOKE ALL ON TABLE public.api_keys FROM anon, authenticated;
+REVOKE ALL ON TABLE public.compliance_log FROM anon, authenticated;
+
+REVOKE ALL ON TABLE public.agents FROM anon;
+REVOKE ALL ON TABLE public.phone_numbers FROM anon;
+REVOKE ALL ON TABLE public.connector_configs FROM anon;
+REVOKE ALL ON TABLE public.connectors FROM anon;
+REVOKE ALL ON TABLE public.contacts FROM anon;
+REVOKE ALL ON TABLE public.calls FROM anon;
+REVOKE ALL ON TABLE public.memory_long_term FROM anon;
+REVOKE ALL ON TABLE public.memory_episodic FROM anon;
+REVOKE ALL ON TABLE public.emotion_events FROM anon;
+REVOKE ALL ON TABLE public.intent_events FROM anon;
+REVOKE ALL ON TABLE public.organizations FROM anon;
+REVOKE ALL ON TABLE public.profiles FROM anon;
+REVOKE ALL ON TABLE public.spaces FROM anon;

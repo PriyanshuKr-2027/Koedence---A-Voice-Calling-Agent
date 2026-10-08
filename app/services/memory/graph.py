@@ -8,6 +8,7 @@ Nodes:
   Episode {id, call_id, date, summary}
 
 Edges:
+  HAD_EPISODE: Contact -> Episode
   MENTIONED: Contact -> Entity
   FRUSTRATED_ABOUT: Contact -> Entity/Topic (count, last_emotion_state, last_seen)
   OCCURRED_IN: Entity -> Episode
@@ -16,7 +17,7 @@ Edges:
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 try:
@@ -60,7 +61,8 @@ def add_entities(
     contact_phone: str = "",
 ) -> bool:
     """
-    MERGE Contact node, Episode node, Entity nodes, MENTIONED edges, and OCCURRED_IN edges.
+    MERGE Contact node, Episode node, HAD_EPISODE edge, Entity nodes, MENTIONED edges, and OCCURRED_IN edges.
+    Ensures that even episodes with zero entities remain attached and reachable via HAD_EPISODE.
     """
     g = connect_falkor(contact_id)
     if not g:
@@ -84,6 +86,14 @@ def add_entities(
             {"episode_id": episode_id, "call_id": call_id, "date": date_str, "summary": summary},
         )
 
+        # Merge Contact -HAD_EPISODE-> Episode edge
+        g.query(
+            "MATCH (c:Contact {id: $contact_id}) "
+            "MATCH (ep:Episode {id: $episode_id}) "
+            "MERGE (c)-[:HAD_EPISODE]->(ep)",
+            {"contact_id": contact_id, "episode_id": episode_id},
+        )
+
         for ent in entities:
             if not ent or not ent.strip():
                 continue
@@ -101,6 +111,31 @@ def add_entities(
     except Exception as e:
         logger.error(f"Error in add_entities for contact {contact_id}: {e}")
         return False
+
+
+def add_episode(
+    contact_id: str,
+    episode_id: str,
+    call_id: str,
+    date: Optional[str] = None,
+    summary: str = "",
+    contact_name: str = "Caller",
+    contact_phone: str = "",
+) -> bool:
+    """
+    Directly creates/merges Episode node and links it to Contact via HAD_EPISODE.
+    Ensures episodes with zero entities remain reachable in graph traversals.
+    """
+    return add_entities(
+        contact_id=contact_id,
+        entities=[],
+        episode_id=episode_id,
+        call_id=call_id,
+        date=date,
+        summary=summary,
+        contact_name=contact_name,
+        contact_phone=contact_phone,
+    )
 
 
 def add_frustration_edges(
@@ -195,7 +230,7 @@ def link_episodes(contact_id: str, from_episode_id: str, to_episode_id: str) -> 
 def get_contact_graph_context(contact_id: str, days: int = 30) -> Dict[str, Any]:
     """
     Retrieves knowledge graph context for a contact.
-      Query 1: recent entity/episode associations
+      Query 1: recent episodes via HAD_EPISODE with their associated entities within `days` timeframe
       Query 2: top frustration topics by frequency
       Query 3: episode causal chains (LEADS_TO)
 
@@ -211,19 +246,26 @@ def get_contact_graph_context(contact_id: str, days: int = 30) -> Dict[str, Any]
         return {"recent_entities": [], "frustration_topics": [], "episode_chain": []}
 
     try:
-        # Query 1: Recent entity/episode associations
+        cutoff_date = ""
+        if days and days > 0:
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        # Query 1: Recent episodes through HAD_EPISODE with optional entity associations
         q1 = (
-            "MATCH (e:Entity)-[:OCCURRED_IN]->(ep:Episode) "
-            "RETURN ep.id as ep_id, ep.summary as summary, ep.date as date, collect(e.name) as entities "
+            "MATCH (c:Contact {id: $contact_id})-[:HAD_EPISODE]->(ep:Episode) "
+            "WHERE $cutoff_date = '' OR ep.date >= $cutoff_date "
+            "OPTIONAL MATCH (e:Entity)-[:OCCURRED_IN]->(ep) "
+            "RETURN ep.id as ep_id, ep.summary as summary, ep.date as date, [x IN collect(e.name) WHERE x IS NOT NULL] as entities "
             "ORDER BY ep.date DESC LIMIT 10"
         )
-        res1 = g.query(q1)
+        res1 = g.query(q1, {"contact_id": contact_id, "cutoff_date": cutoff_date})
         recent_entities = []
         if res1 and res1.result_set:
             for row in res1.result_set:
                 summary = row[1] if len(row) > 1 and row[1] else ""
                 date_val = row[2] if len(row) > 2 and row[2] else ""
-                ents = row[3] if len(row) > 3 and isinstance(row[3], list) else []
+                raw_ents = row[3] if len(row) > 3 and isinstance(row[3], list) else []
+                ents = [e for e in raw_ents if e]
                 recent_entities.append({
                     "episode_summary": summary,
                     "entities": ents,
@@ -349,10 +391,28 @@ def get_graph_data(contact_id: str) -> Dict[str, Any]:
         return {"nodes": [], "links": []}
 
 
+def count_nodes(contact_id: str) -> int:
+    """
+    Counts total active nodes in the contact-specific graph.
+    Used by the erasure verification probe.
+    """
+    g = connect_falkor(contact_id)
+    if not g:
+        return 0
+    try:
+        res = g.query("MATCH (n) RETURN count(n)")
+        if res and res.result_set:
+            return int(res.result_set[0][0])
+        return 0
+    except Exception as e:
+        logger.warning("Error counting nodes for contact %s: %s", contact_id, e)
+        return 0
+
+
 def delete_contact_graph(contact_id: str) -> bool:
     """
     Deletes all nodes in the contact-specific graph and drops the graph instance.
-    Confirms the graph is completely gone (count(n) == 0).
+    Confirms the graph is completely gone (count_nodes(contact_id) == 0).
     """
     g = connect_falkor(contact_id)
     if not g:
@@ -371,16 +431,10 @@ def delete_contact_graph(contact_id: str) -> bool:
                 pass
 
         # 3. Confirm graph is gone / empty
-        try:
-            res = g.query("MATCH (n) RETURN count(n)")
-            if res and res.result_set:
-                cnt = res.result_set[0][0]
-                if cnt > 0:
-                    logger.error("FalkorDB graph contact_%s still has %d nodes after deletion", contact_id, cnt)
-                    return False
-        except Exception:
-            # Query on non-existent/dropped graph confirms deletion
-            pass
+        cnt = count_nodes(contact_id)
+        if cnt > 0:
+            logger.error("FalkorDB graph contact_%s still has %d nodes after deletion", contact_id, cnt)
+            return False
 
         return True
     except Exception as e:

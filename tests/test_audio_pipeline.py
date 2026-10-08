@@ -140,7 +140,7 @@ def test_empty_input_handled():
 
 def test_vad_splits_two_spoken_bursts():
     """
-    Simulate two spoken bursts separated by silence.
+    Simulate two spoken bursts separated by >= 700 ms of silence.
     The VAD must emit exactly two distinct utterances.
     """
     vad = VoiceActivityDetector(
@@ -148,8 +148,8 @@ def test_vad_splits_two_spoken_bursts():
         frame_duration_ms=20,
         energy_threshold=400.0,
         start_voiced_frames=3,
-        silence_duration_ms=600,   # 600 ms = 30 silent frames
-        min_utterance_ms=100,
+        silence_duration_ms=700,   # 700 ms = 35 silent frames
+        min_utterance_ms=120,
     )
 
     # 20 ms at 8000 Hz = 160 samples = 320 bytes of PCM16
@@ -165,13 +165,13 @@ def test_vad_splits_two_spoken_bursts():
         if out is not None:
             utterances.append(out)
 
-    # Silence 1: 35 silent frames (700 ms > 600 ms timeout) -> should emit burst 1
+    # Silence 1: 35 silent frames (700 ms >= 700 ms timeout) -> should emit burst 1
     for _ in range(35):
         out = vad.process_frame(silent_sample)
         if out is not None:
             utterances.append(out)
 
-    assert len(utterances) == 1, "First utterance should be emitted after silence"
+    assert len(utterances) == 1, "First utterance should be emitted after 700ms silence"
 
     # Burst 2: 25 voiced frames (500 ms)
     for _ in range(25):
@@ -179,13 +179,153 @@ def test_vad_splits_two_spoken_bursts():
         if out is not None:
             utterances.append(out)
 
-    # Silence 2: 35 silent frames (700 ms > 600 ms timeout) -> should emit burst 2
+    # Silence 2: 35 silent frames (700 ms >= 700 ms timeout) -> should emit burst 2
     for _ in range(35):
         out = vad.process_frame(silent_sample)
         if out is not None:
             utterances.append(out)
 
-    assert len(utterances) == 2, "Second utterance should be emitted after second silence"
+    assert len(utterances) == 2, "Second utterance should be emitted after second 700ms silence"
+
+
+def test_quiet_recording_not_cut_mid_sentence():
+    """
+    Test that a quiet recording (RMS just above VAD_ENERGY_THRESHOLD) with
+    intra-sentence pauses (e.g., 200-400 ms inter-word pauses) is NOT cut mid-sentence,
+    and is only emitted as a single complete utterance once >= 700 ms silence occurs.
+    """
+    from app.core.config import settings
+
+    vad = VoiceActivityDetector(
+        sample_rate=8000,
+        frame_duration_ms=settings.VAD_FRAME_MS,
+        energy_threshold=settings.VAD_ENERGY_THRESHOLD,  # 400.0
+        silence_duration_ms=settings.VAD_SILENCE_MS,      # 700 ms
+        min_utterance_ms=settings.VAD_MIN_MS,            # 120 ms
+        max_utterance_ms=settings.VAD_MAX_MS,            # 15000 ms
+    )
+
+    # Generate quiet speech frame: amplitude 650 -> RMS = 650 / sqrt(2) ≈ 459.6 (> 400 threshold)
+    t = np.linspace(0, 0.02, 160, endpoint=False)
+    quiet_voiced_sample = (650.0 * np.sin(2 * np.pi * 440.0 * t)).astype(np.int16).tobytes()
+    rms_quiet = calculate_rms(quiet_voiced_sample)
+    assert 400.0 < rms_quiet < 600.0, f"RMS {rms_quiet} should be quiet but above threshold"
+
+    silent_sample = np.zeros(160, dtype=np.int16).tobytes()
+
+    emitted = []
+
+    # Word 1: 15 frames (300 ms) of quiet speech
+    for _ in range(15):
+        out = vad.process_frame(quiet_voiced_sample)
+        if out is not None:
+            emitted.append(out)
+    assert len(emitted) == 0, "Should not emit mid-word 1"
+
+    # Intra-sentence pause 1: 15 frames (300 ms silence < 700 ms timeout)
+    for _ in range(15):
+        out = vad.process_frame(silent_sample)
+        if out is not None:
+            emitted.append(out)
+    assert len(emitted) == 0, "Quiet sentence must not be cut during 300 ms intra-sentence pause"
+
+    # Word 2: 25 frames (500 ms) of quiet speech
+    for _ in range(25):
+        out = vad.process_frame(quiet_voiced_sample)
+        if out is not None:
+            emitted.append(out)
+    assert len(emitted) == 0, "Should not emit mid-word 2"
+
+    # Intra-sentence pause 2: 12 frames (240 ms silence < 700 ms timeout)
+    for _ in range(12):
+        out = vad.process_frame(silent_sample)
+        if out is not None:
+            emitted.append(out)
+    assert len(emitted) == 0, "Quiet sentence must not be cut during 240 ms intra-sentence pause"
+
+    # Word 3: 20 frames (400 ms) of quiet speech
+    for _ in range(20):
+        out = vad.process_frame(quiet_voiced_sample)
+        if out is not None:
+            emitted.append(out)
+    assert len(emitted) == 0, "Should not emit mid-word 3"
+
+    # Final sentence end: 35 frames (700 ms silence >= 700 ms timeout)
+    for _ in range(35):
+        out = vad.process_frame(silent_sample)
+        if out is not None:
+            emitted.append(out)
+
+    assert len(emitted) == 1, "Must emit exactly ONE full utterance once sentence completes with 700ms silence"
+    # Utterance should contain all words and pauses:
+    # 15 + 15 + 25 + 12 + 20 + 35 frames = 122 frames
+    # Check length
+    total_samples = len(emitted[0]) // 2
+    assert total_samples >= (15 + 15 + 25 + 12 + 20) * 160
+
+
+def test_two_bursts_separated_by_700ms_silence_become_two_utterances():
+    """
+    Simulate two spoken bursts separated by exactly 700 ms of silence.
+    Verifies that the silence timeout triggers emission of the first utterance,
+    and subsequent speech triggers and emits the second utterance.
+    """
+    from app.core.config import settings
+
+    vad = VoiceActivityDetector(
+        sample_rate=8000,
+        frame_duration_ms=settings.VAD_FRAME_MS,
+        energy_threshold=settings.VAD_ENERGY_THRESHOLD,
+        silence_duration_ms=settings.VAD_SILENCE_MS,
+        min_utterance_ms=settings.VAD_MIN_MS,
+        max_utterance_ms=settings.VAD_MAX_MS,
+    )
+
+    t = np.linspace(0, 0.02, 160, endpoint=False)
+    voiced_sample = (8000.0 * np.sin(2 * np.pi * 300.0 * t)).astype(np.int16).tobytes()
+    silent_sample = np.zeros(160, dtype=np.int16).tobytes()
+
+    utterances = []
+
+    # First speech burst: 25 frames (500 ms)
+    for _ in range(25):
+        out = vad.process_frame(voiced_sample)
+        if out is not None:
+            utterances.append(out)
+
+    # 700 ms of silence (35 frames of 20 ms)
+    for _ in range(35):
+        out = vad.process_frame(silent_sample)
+        if out is not None:
+            utterances.append(out)
+
+    assert len(utterances) == 1, "First burst should produce first utterance after 700 ms silence"
+
+    # Second speech burst: 30 frames (600 ms)
+    for _ in range(30):
+        out = vad.process_frame(voiced_sample)
+        if out is not None:
+            utterances.append(out)
+
+    # 700 ms of silence (35 frames of 20 ms)
+    for _ in range(35):
+        out = vad.process_frame(silent_sample)
+        if out is not None:
+            utterances.append(out)
+
+    assert len(utterances) == 2, "Second burst should produce second utterance after 700 ms silence"
+
+
+def test_vad_defaults_use_settings():
+    """Verify that default VoiceActivityDetector parameters match settings."""
+    from app.core.config import settings
+
+    vad = VoiceActivityDetector()
+    assert vad.frame_duration_ms == settings.VAD_FRAME_MS
+    assert vad.energy_threshold == settings.VAD_ENERGY_THRESHOLD
+    assert vad.silence_duration_ms == settings.VAD_SILENCE_MS
+    assert vad.min_utterance_ms == settings.VAD_MIN_MS
+    assert vad.max_utterance_ms == settings.VAD_MAX_MS
 
 
 # ---------------------------------------------------------------------------
